@@ -1,0 +1,14 @@
+# ========== Java Maven 编译产物 ==========
+target/
+*.class
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+
+# ========== IDEA IDE 文件（必须忽略，不要上传本地配置） ==========
+.idea/
+*.iml
+*.iws
+out/
+.artifacts
