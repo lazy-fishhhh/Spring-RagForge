@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 对话</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #e3e6ea;
+    --primary: #4f6ef7;
+    --primary-dark: #3b5bdb;
+    --primary-disabled: #a8b3e6;
+    --text: #1f2329;
+    --muted: #8a919f;
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 860px;
+    height: 100vh;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  /* ===== 顶部工具栏 ===== */
+  .toolbar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar .title {
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .memory-group {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .memory-group label {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .memory-group input {
+    flex: 1;
+    max-width: 340px;
+    padding: 8px 10px;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    outline: none;
+  }
+  .memory-group input:focus {
+    border-color: var(--primary);
+    background: var(--panel);
+  }
+
+  /* ===== 消息区 ===== */
+  .chat-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg { display: flex; }
+  .msg-user { justify-content: flex-end; }
+  .msg-ai  { justify-content: flex-start; }
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .msg-user .bubble {
+    background: var(--primary);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .msg-ai .bubble {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+  .text {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .thinking {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ===== 底部输入区 ===== */
+  .input-bar {
+    flex-shrink: 0;
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  .input-bar input {
+    flex: 1;
+    padding: 11px 14px;
+    font-size: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    outline: none;
+  }
+  .input-bar input:focus { border-color: var(--primary); }
+  .btn {
+    padding: 0 18px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-primary:disabled {
+    background: var(--primary-disabled);
+    cursor: not-allowed;
+  }
+  .btn-outline {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-outline:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+</style>
+</head>
+<body>
+
+  <!-- 顶部工具栏 -->
+  <header class="toolbar">
+    <span class="title">AI 对话</span>
+    <div class="memory-group">
+      <label for="memoryId">memoryId</label>
+      <input id="memoryId" type="text" placeholder="手动填写，作为会话记忆标识">
+    </div>
+    <button id="newChatBtn" class="btn btn-outline">新对话</button>
+  </header>
+
+  <!-- 消息区 -->
+  <main id="chatBox" class="chat-box"></main>
+
+  <!-- 底部输入区 -->
+  <footer class="input-bar">
+    <input id="msgInput" type="text" placeholder="输入消息，按回车发送…">
+    <button id="sendBtn" class="btn btn-primary">发送</button>
+  </footer>
+
+<script>
+  // 后端接口地址（同源，由 Spring Boot 托管本页面）
+  const API_URL = '/chat';
+
+  const $ = id => document.getElementById(id);
+  const chatBox = $('chatBox');
+  const msgInput = $('msgInput');
+  const sendBtn = $('sendBtn');
+  const memoryIdInput = $('memoryId');
+  const newChatBtn = $('newChatBtn');
+
+  let streaming = false;
+  let abortCtrl = null;
+
+  // 打字机逐字输出状态
+  let typingTimer = null;   // setInterval 句柄
+  let pendingText = '';     // 收到的待输出文本缓冲
+  let activeAiText = null;  // 当前正在输出的 AI 消息正文容器
+  let started = false;      // 是否已输出首个字符
+  let errorMsg = null;      // 本次请求是否出错
+  let streamEnded = false;  // 网络流是否已结束（[DONE] / reader done）
+  let aborted = false;      // 本次请求是否被"新对话"中止
+
+  function scrollToBottom() {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  // role: 'user' | 'ai'，返回消息正文容器（用于流式追加内容）
+  function appendMessage(role, text) {
+    const msg = document.createElement('div');
+    msg.className = 'msg ' + (role === 'user' ? 'msg-user' : 'msg-ai');
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    const textEl = document.createElement('div');
+    textEl.className = 'text';
+    textEl.textContent = text;
+    bubble.appendChild(textEl);
+    msg.appendChild(bubble);
+    chatBox.appendChild(msg);
+    scrollToBottom();
+    return textEl;
+  }
+
+  function setStreaming(v) {
+    streaming = v;
+    sendBtn.disabled = v;
+    sendBtn.textContent = v ? '生成中…' : '发送';
+  }
+
+  // 开启打字机：每 10ms 一次，从 pendingText 分批输出到 AI 气泡
+  function startTypewriter(aiText) {
+    activeAiText = aiText;
+    pendingText = '';
+    started = false;
+    if (typingTimer) clearInterval(typingTimer);
+    typingTimer = setInterval(typeTick, 10);
+  }
+
+  // 单次输出一个字符；首次输出时清掉"正在思考…"占位
+  function typeTick() {
+    if (!activeAiText) return;
+    if (pendingText !== '') {
+      if (!started) {
+        started = true;
+        activeAiText.textContent = ''; // textContent 置空即移除 thinking span
+      }
+      const chars = Array.from(pendingText); // 按 Unicode 码点取字，兼容中文/emoji
+      activeAiText.textContent += chars.splice(0, 4).join(''); // 每次输出多个字符
+      pendingText = chars.join('');
+      scrollToBottom();
+    }
+    // 流已结束且缓冲打空 → 打字机完成，收尾（不再一次性补完）
+    if (pendingText === '' && streamEnded) {
+      finishMessage();
+    }
+  }
+
+  // 收尾：停止定时器、复位状态；出错/中止时丢弃缓冲立即结束
+  function finishMessage() {
+    if (typingTimer) { clearInterval(typingTimer); typingTimer = null; }
+    if (activeAiText && activeAiText.isConnected) {
+      if (errorMsg) activeAiText.textContent = errorMsg;
+      else if (!started) activeAiText.textContent = '（无回复）'; // 覆盖"正在思考…"
+    }
+    activeAiText = null;
+    pendingText = '';
+    streamEnded = false;
+    aborted = false;
+    setStreaming(false);
+    scrollToBottom();
+  }
+
+  // 解析单个 SSE 事件块：提取所有 "data:" 前缀的行，去掉前缀并拼接
+  function parseEvent(chunk) {
+    let data = '';
+    for (const line of chunk.split('\n')) {
+      const t = line.trim();
+      if (t.startsWith('data:')) {
+        let value = t.slice(5);
+        if (value.startsWith(' ')) value = value.slice(1); // 去掉 "data: " 后紧跟的一个空格
+        data += value;
+      }
+    }
+    return data === '' ? null : data;
+  }
+
+  async function sendMessage() {
+    const text = msgInput.value.trim();
+    if (!text || streaming) return;
+    const memoryId = memoryIdInput.value.trim();
+
+    appendMessage('user', text);
+    msgInput.value = '';
+
+    // AI 气泡，初始显示"正在思考…"
+    const aiText = appendMessage('ai', '');
+    const thinking = document.createElement('span');
+    thinking.className = 'thinking';
+    thinking.textContent = '正在思考…';
+    aiText.appendChild(thinking);
+
+    abortCtrl = new AbortController();
+    setStreaming(true);
+    startTypewriter(aiText);
+    errorMsg = null;
+    streamEnded = false;
+    aborted = false;
+
+    let stop = false;
+    try {
+      const url = API_URL + '?message=' + encodeURIComponent(text)
+                + '&memoryId=' + encodeURIComponent(memoryId);
+      const res = await fetch(url, {
+        headers: { Accept: 'text/event-stream' },
+        signal: abortCtrl.signal
+      });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (!stop) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // 按 \n\n 切分完整事件，剩余的留在 buffer 等待下次拼合
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          const data = parseEvent(part);
+          if (data === null) continue;
+          if (data === '[DONE]') { stop = true; break; }
+          pendingText += data; // 累积到打字机缓冲，由定时器逐字输出
+        }
+      }
+
+      // 流结束前收到的最后一段（没有紧跟 \n\n）
+      if (!stop && buffer.trim()) {
+        const data = parseEvent(buffer);
+        if (data && data !== '[DONE]') {
+          pendingText += data;
+        }
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') aborted = true; // 新对话主动中止
+      else errorMsg = '出错了：' + err.message;
+    } finally {
+      if (errorMsg || aborted) {
+        finishMessage(); // 出错/中止：丢弃缓冲，立即结束
+      } else {
+        streamEnded = true; // 流已结束：剩余缓冲继续由定时器逐字打完，打空后自动收尾
+      }
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  msgInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // 新对话：中止进行中的请求，清空页面消息与 memoryId，不刷新页面
+  newChatBtn.addEventListener('click', () => {
+    if (abortCtrl) abortCtrl.abort();
+    if (typingTimer) { clearInterval(typingTimer); typingTimer = null; }
+    chatBox.innerHTML = '';
+    memoryIdInput.value = '';
+    msgInput.value = '';
+    // 复位打字机状态（兼容"流已结束仍在逐字输出"时点击的情况），发送按钮恢复可用
+    activeAiText = null;
+    pendingText = '';
+    streamEnded = false;
+    setStreaming(false);
+  });
+</script>
+</body>
+</html>

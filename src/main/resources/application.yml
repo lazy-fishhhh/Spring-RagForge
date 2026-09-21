@@ -1,1 +1,44 @@
-spring.application.name=Spring-RagForge
+langchain4j:
+  open-ai:
+    #    chat-model:
+    #      api-key: ${DASHSCOPE_API_KEY}
+    #      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    #      model-name: qwen3.8-flash
+    #      temperature: 0.5
+    #      log-requests: true    # ??
+    #      log-responses: true   # ??
+    # ????
+    streaming-chat-model:
+      api-key: ${DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model-name: qwen3.8-flash
+      temperature: 0.5
+      reasoning-effort: none  # ????
+      log-requests: true    # ??
+      log-responses: true   # ??
+    # ????
+    embedding-model:
+      api-key: ${DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model-name: qwen3.7-text-embedding
+logging:
+  level:
+    dev.langchain4j: debug
+
+server:
+  port: 8099
+  tomcat:
+    max-http-form-post-size: 1GB
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+      lettuce:
+        pool:
+          max-active: 8 # ????
+          max-idle: 8   # ??????
+          min-idle: 0   # ??????
+          max-wait: 100 # ??????
