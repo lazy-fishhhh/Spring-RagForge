@@ -1,7 +1,9 @@
 package com.springragforge.config;
 
 import com.springragforge.constant.SystemPrompts;
+import com.springragforge.rag.SourceRegistry;
 import com.springragforge.rag.injector.NumberedContentInjector;
+import com.springragforge.rag.retriever.SourceCapturingContentRetriever;
 import com.springragforge.repository.RedisChatMemoryStore;
 import com.springragforge.service.ChatService;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -39,11 +41,16 @@ public class ChatConfig {
     @Resource
     private StreamingChatModel streamingChatModel;
 
+    @Resource
+    private SourceRegistry sourceRegistry;
+
     @Bean
     public ChatService chatService(ContentRetriever contentRetriever) {
+        // 用包装器包一层：召回的同时把片段元数据存进 SourceRegistry，供 Controller 回传来源
+        ContentRetriever capturingRetriever = new SourceCapturingContentRetriever(contentRetriever, sourceRegistry);
         // 注入器要自己指定：默认那个不给片段编号、也不带出处，系统提示词里的引用规则就落不了地
         RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
-                .contentRetriever(contentRetriever)
+                .contentRetriever(capturingRetriever)
                 .contentInjector(new NumberedContentInjector())
                 .build();
         return AiServices.builder(ChatService.class)

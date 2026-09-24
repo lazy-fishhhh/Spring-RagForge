@@ -216,6 +216,33 @@
             color: var(--primary);
         }
 
+        /* 参考来源区域：与正文之间有分隔线，标题加粗，条目用小字 */
+        .sources {
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+        .sources-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .sources-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.8;
+        }
+        .sources-list li {
+            word-break: break-all;
+        }
+        .sources-list a {
+            color: var(--primary);
+        }
+
         .thinking {
             color: var(--muted);
             font-style: italic;
@@ -2101,8 +2128,41 @@
     // 打字机是逐字追加，没法增量渲染 markdown，所以每帧拿全量原文整体重渲染
     marked.setOptions({gfm: true, breaks: true});
 
+    // 所有 AI 回答中的链接都在新标签打开
+    DOMPurify.addHook('afterSanitizeAttributes', function(node) {
+        if (node.tagName === 'A' && node.getAttribute('href')) {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+        }
+    });
+
     function renderMarkdown(source) {
         return DOMPurify.sanitize(marked.parse(source));
+    }
+
+    /** 把后端 event:sources 发来的纯文本来源清单渲染成带样式的 HTML */
+    function renderSources(text) {
+        const lines = text.split('\n');
+        let html = '<div class="sources-title">参考来源</div><ul class="sources-list">';
+        for (const line of lines) {
+            const m = line.match(/^\[(\d+)\]\s*(.*)$/);
+            if (!m) continue;
+            const idx = m[1];
+            const rest = m[2];
+            const sep = rest.indexOf(' | 链接：');
+            let origin, url;
+            if (sep >= 0) {
+                origin = rest.slice(0, sep).replace(/^出处：/, '').trim();
+                url = rest.slice(sep + ' | 链接：'.length).trim();
+            } else {
+                origin = rest.replace(/^出处：/, '').trim();
+                url = '';
+            }
+            html += '<li><b>[' + idx + ']</b> 出处：' + origin +
+                    (url ? ' | 链接：<a href="' + url + '">' + url + '</a>' : '') + '</li>';
+        }
+        html += '</ul>';
+        return html;
     }
 
     let streaming = false;
@@ -2117,6 +2177,7 @@
     let errorMsg = null;      // 本次请求是否出错
     let streamEnded = false;  // 网络流是否已结束（[DONE] / reader done）
     let aborted = false;      // 本次请求是否被"新对话"中止
+    let sourcesText = null;   // 本次回答的参考来源（来自 event: sources）
 
     function scrollToBottom() {
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -2151,6 +2212,7 @@
         pendingText = '';
         rawMarkdown = '';
         started = false;
+        sourcesText = null;
         if (typingTimer) clearInterval(typingTimer);
         typingTimer = setInterval(typeTick, 10);
     }
@@ -2182,12 +2244,23 @@
             typingTimer = null;
         }
         if (activeAiText && activeAiText.isConnected) {
-            if (errorMsg) activeAiText.textContent = errorMsg;         // 纯文本，不走渲染
-            else if (!started) activeAiText.textContent = '（无回复）'; // 覆盖"正在思考…"
+            if (errorMsg) {
+                activeAiText.textContent = errorMsg;         // 纯文本，不走渲染
+            } else if (!started) {
+                activeAiText.textContent = '（无回复）';     // 覆盖"正在思考…"
+            } else if (sourcesText && !aborted) {
+                // 打字机结束后，把参考来源渲染成带样式的 HTML 追加到消息末尾
+                const sourcesDiv = document.createElement('div');
+                sourcesDiv.className = 'sources';
+                sourcesDiv.innerHTML = DOMPurify.sanitize(renderSources(sourcesText));
+                activeAiText.appendChild(sourcesDiv);
+                scrollToBottom();
+            }
         }
         activeAiText = null;
         pendingText = '';
         rawMarkdown = '';
+        sourcesText = null;
         streamEnded = false;
         aborted = false;
         setStreaming(false);
@@ -2198,10 +2271,13 @@
     function parseEvent(chunk) {
         const lines = chunk.split('\n');
         const dataLines = [];
+        let eventType = null;
         for (const line of lines) {
             // 只去掉行尾的 \r（兼容 \r\n），不要动内容里的空格
             const l = line.replace(/\r$/, '');
-            if (l.startsWith('data:')) {
+            if (l.startsWith('event:')) {
+                eventType = l.slice(6).trim();
+            } else if (l.startsWith('data:')) {
                 let value = l.slice(5);
                 // 规范：冒号后如果紧跟一个空格，去掉这一个空格；其他空格保留
                 if (value.startsWith(' ')) value = value.slice(1);
@@ -2209,8 +2285,7 @@
             }
         }
         if (dataLines.length === 0) return null;
-        // ⭐ 关键：多条 data: 之间用 \n 连接（空行也保留）
-        return dataLines.join('\n');
+        return {event: eventType, data: dataLines.join('\n')};
     }
 
     async function sendMessage() {
@@ -2258,21 +2333,29 @@
                 const parts = buffer.split('\n\n');
                 buffer = parts.pop();
                 for (const part of parts) {
-                    const data = parseEvent(part);
-                    if (data === null) continue;
-                    if (data === '[DONE]') {
+                    const ev = parseEvent(part);
+                    if (ev === null) continue;
+                    if (ev.data === '[DONE]') {
                         stop = true;
                         break;
                     }
-                    pendingText += data; // 累积到打字机缓冲，由定时器逐字输出
+                    if (ev.event === 'sources') {
+                        sourcesText = ev.data;
+                    } else {
+                        pendingText += ev.data; // 累积到打字机缓冲，由定时器逐字输出
+                    }
                 }
             }
 
             // 流结束前收到的最后一段（没有紧跟 \n\n）
             if (!stop && buffer.trim()) {
-                const data = parseEvent(buffer);
-                if (data && data !== '[DONE]') {
-                    pendingText += data;
+                const ev = parseEvent(buffer);
+                if (ev && ev.data !== '[DONE]') {
+                    if (ev.event === 'sources') {
+                        sourcesText = ev.data;
+                    } else {
+                        pendingText += ev.data;
+                    }
                 }
             }
         } catch (err) {
