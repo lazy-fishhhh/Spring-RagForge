@@ -12,7 +12,7 @@ langchain4j:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       model-name: qwen3.8-flash
-      temperature: 0.5
+      temperature: 0.3
       reasoning-effort: none  # ????
       log-requests: true    # ??
       log-responses: true   # ??

@@ -1,5 +1,7 @@
 package com.springragforge.config;
 
+import com.springragforge.constant.SystemPrompts;
+import com.springragforge.rag.injector.NumberedContentInjector;
 import com.springragforge.repository.RedisChatMemoryStore;
 import com.springragforge.service.ChatService;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -10,6 +12,8 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
@@ -37,10 +41,16 @@ public class ChatConfig {
 
     @Bean
     public ChatService chatService(ContentRetriever contentRetriever) {
+        // 注入器要自己指定：默认那个不给片段编号、也不带出处，系统提示词里的引用规则就落不了地
+        RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
+                .contentRetriever(contentRetriever)
+                .contentInjector(new NumberedContentInjector())
+                .build();
         return AiServices.builder(ChatService.class)
+                .systemMessage(SystemPrompts.SYSTEM_PROMPT)
                 .streamingChatModel(streamingChatModel)
                 .chatMemoryProvider(chatMemoryProvider())
-                .contentRetriever(contentRetriever)
+                .retrievalAugmentor(retrievalAugmentor)
                 .build();
     }
 
@@ -76,7 +86,7 @@ public class ChatConfig {
                 .embeddingStore(store)
                 .embeddingModel(embeddingModel)
                 .minScore(0.7)
-                .maxResults(3)
+                .maxResults(5)
                 .build();
     }
 

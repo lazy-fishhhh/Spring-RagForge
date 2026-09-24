@@ -1,7 +1,7 @@
 package com.springragforge.config;
 
+import com.springragforge.rag.splitter.AsciiDocDocumentSplitter;
 import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.loader.ClassPathDocumentLoader;
 import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.segment.TextSegment;
@@ -38,6 +38,7 @@ public class EmbeddingInitializer implements ApplicationRunner {
         try {
             List<Document> documents = FileSystemDocumentLoader.loadDocuments(Path.of("E:\\springDoc\\corpus\\spring-framework\\core\\aop\\ataspectj"), new TextDocumentParser());
             EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
+                    .documentSplitter(new AsciiDocDocumentSplitter())
                     .embeddingModel(new BatchEmbeddingModel(embeddingModel))
                     .embeddingStore(store)
                     .build();
