@@ -1,0 +1,355 @@
+package com.springragforge.rag.ingest;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springragforge.config.BatchEmbeddingModel;
+import com.springragforge.rag.source.SourceLinkResolver;
+import com.springragforge.rag.splitter.AsciiDocDocumentSplitter;
+import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
+import dev.langchain4j.data.document.parser.TextDocumentParser;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
+
+/**
+ * 增量灌库：只重灌内容变了的文档，没变的直接跳过。
+ *
+ * <p>为什么不能用 {@code EmbeddingStoreIngestor}：它自己生成 UUID 当向量 id，灌完就再也定位不到
+ * 某个文档的那些向量，想按文档更新只能全库重建。所以这里改成显式 id —— 直接用切分器产出的
+ * {@code chunk_id} 当向量 id，配合 {@link IngestManifest} 记下每个文档产出了哪些 id，
+ * 就能整篇替换。
+ *
+ * <p>比对粒度是文档而不是片段：{@code chunk_id} 里带着段序号，文档中间插一段会让后面所有段的
+ * 序号整体漂移，逐片段比对没有意义。所以按文件内容哈希判断，变了就整篇重切重灌。
+ *
+ * <p>每次跑完都会落盘两样东西：向量库和清单。清单里同时记着切分器签名和 embedding 模型名，
+ * 这两样一变，历史向量就不可比了，直接清库全量重来。
+ */
+@Slf4j
+@Component
+public class IncrementalIndexer {
+
+    /** 单次灌库最多记多少条失败原因。失败计数不受此限。 */
+    private static final int MAX_RECORDED_FAILURES = 20;
+
+    private final EmbeddingStore<TextSegment> store;
+    private final IngestProperties properties;
+    private final ObjectMapper objectMapper;
+    private final String embeddingModelName;
+    /** 切分器按配置里的语料根构造，保证切出来的 chunk_id 和清单里的 key 同源。 */
+    private final AsciiDocDocumentSplitter splitter;
+    private final BatchEmbeddingModel batchEmbeddingModel;
+
+    /** 同一时刻只允许一次灌库，避免手动连点两次导致清单和向量库互相覆盖。 */
+    private final AtomicBoolean running = new AtomicBoolean();
+
+    public IncrementalIndexer(
+            EmbeddingStore<TextSegment> store,
+            EmbeddingModel embeddingModel,
+            IngestProperties properties,
+            ObjectMapper objectMapper,
+            @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}") String embeddingModelName) {
+        this.store = store;
+        this.properties = properties;
+        this.objectMapper = objectMapper;
+        this.embeddingModelName = embeddingModelName;
+        this.splitter = new AsciiDocDocumentSplitter(properties.getCorpusRoot());
+        // 单次请求条数有上限（DashScope 20 条），灌库必须分批
+        this.batchEmbeddingModel = new BatchEmbeddingModel(embeddingModel);
+    }
+
+    /**
+     * 执行一次增量灌库。同步执行，调用方（HTTP 请求线程）等结果。
+     *
+     * @return 本次灌库的统计
+     * @throws IllegalStateException 已有灌库在跑，或语料根目录不存在（后者会中止，不动任何数据）
+     */
+    public IngestStats reindex() {
+        if (!running.compareAndSet(false, true)) {
+            throw new IllegalStateException("已有灌库任务在执行，请等它结束后再试");
+        }
+        long startedAt = System.currentTimeMillis();
+        try {
+            return doReindex(startedAt);
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private IngestStats doReindex(long startedAt) {
+        // 先扫盘再动数据：语料根配错时要在删任何东西之前就抛出去
+        Map<String, Path> files = scanCorpus();
+
+        IngestManifest manifest = readManifest();
+        String signature = splitter.signature();
+        // 清单丢了、清单和当前配置不匹配、或落盘的向量库没了，历史向量都定位不到，只能全量重建
+        boolean reusable = manifest != null
+                && storeIntact()
+                && signature.equals(manifest.getChunkerSignature())
+                && embeddingModelName.equals(manifest.getEmbeddingModel());
+        if (!reusable) {
+            // 全量重建：清库比按 id 删干净，也顺便处理了「模型换了，旧向量不可比」
+            store.removeAll();
+            manifest = new IngestManifest();
+            log.info("灌库走全量重建（首次灌库 / 清单或向量库缺失 / 切分器或模型变更）");
+        }
+        manifest.setChunkerSignature(signature);
+        manifest.setEmbeddingModel(embeddingModelName);
+
+        int added = 0;
+        int updated = 0;
+        int deleted = 0;
+        int unchanged = 0;
+        int failed = 0;
+        int embeddedChunks = 0;
+        List<String> failures = new ArrayList<>();
+
+        // 1. 删：清单里有、磁盘上已经没有的文档
+        for (String docKey : new TreeSet<>(manifest.getDocuments().keySet())) {
+            if (files.containsKey(docKey)) {
+                continue;
+            }
+            IngestManifest.DocEntry entry = manifest.getDocuments().remove(docKey);
+            removeVectors(entry.getChunkIds());
+            deleted++;
+            log.info("语料已删除，移除向量: {} ({} 个片段)", docKey, entry.getChunkIds().size());
+        }
+
+        // 2. 增/改：按文件哈希比对
+        for (Map.Entry<String, Path> file : files.entrySet()) {
+            String docKey = file.getKey();
+            try {
+                String sha256 = sha256(file.getValue());
+                IngestManifest.DocEntry previous = manifest.getDocuments().get(docKey);
+                if (previous != null && sha256.equals(previous.getSha256())) {
+                    // 内容没变：一次 embedding 都不调，这是增量灌库的意义所在
+                    unchanged++;
+                    continue;
+                }
+
+                List<TextSegment> segments = split(file.getValue());
+                if (segments.isEmpty()) {
+                    // 文档被掏空了，旧向量不能留着当幽灵
+                    if (previous != null) {
+                        removeVectors(previous.getChunkIds());
+                        manifest.getDocuments().remove(docKey);
+                        deleted++;
+                    }
+                    continue;
+                }
+
+                List<String> ids = chunkIds(segments);
+                List<Embedding> embeddings = batchEmbeddingModel.embedAll(segments).content();
+                if (embeddings.size() != segments.size()) {
+                    throw new IllegalStateException(
+                            "embedding 返回条数与片段数不一致: " + embeddings.size() + " != " + segments.size());
+                }
+                embeddedChunks += segments.size();
+
+                // 先 embed 成功，再删旧写新：中途失败最多是这个文档没更新，不会留下删除后的空档
+                removeVectors(previous == null ? List.of() : previous.getChunkIds());
+                store.addAll(ids, embeddings, new ArrayList<>(segments));
+                manifest.getDocuments().put(docKey, new IngestManifest.DocEntry(sha256, ids));
+
+                if (previous == null) {
+                    added++;
+                    log.info("新增文档: {} ({} 个片段)", docKey, ids.size());
+                } else {
+                    updated++;
+                    log.info("更新文档: {} ({} 个片段)", docKey, ids.size());
+                }
+            } catch (Exception e) {
+                // 单个文档失败不影响其它文档，也不写清单，下次灌库自然会重试
+                failed++;
+                log.error("文档灌库失败，本次跳过: {} ({})", docKey, e.toString());
+                if (failures.size() < MAX_RECORDED_FAILURES) {
+                    failures.add(docKey + ": " + e);
+                }
+            }
+        }
+
+        // 3. 收尾：先落向量库、再写清单。顺序不能反——
+        // 中间挂掉的话，清单落后于向量库只是下次多灌一遍（幂等），
+        // 反过来则是清单声称已灌、向量库里其实没有，那些文档会被永久跳过。
+        serializeStore();
+        writeManifest(manifest);
+
+        long elapsed = System.currentTimeMillis() - startedAt;
+        log.info("灌库结束: 重建={} 新增={} 更新={} 删除={} 跳过={} 失败={} 送 embed 片段={} 耗时={}ms",
+                !reusable, added, updated, deleted, unchanged, failed, embeddedChunks, elapsed);
+        return new IngestStats(!reusable, added, updated, deleted, unchanged, failed, embeddedChunks, elapsed, failures);
+    }
+
+    /**
+     * 向量库里上一次灌的数据还在不在。
+     *
+     * <p>只对「落盘的内存实现」有意义：进程重启后它从文件恢复，文件没了就是空库，
+     * 这时清单再完整也不能信，否则会跳过所有文档、留下一个空库。
+     * 换成持久化 store 后库本身就在外部，不该再拿本地文件说事。
+     */
+    private boolean storeIntact() {
+        if (!(store instanceof InMemoryEmbeddingStore<?>)) {
+            return true;
+        }
+        return Files.exists(properties.getStoreFile());
+    }
+
+    /** 扫描语料根下所有 .adoc，返回 docKey 到文件的映射。目录不存在直接中止，避免误删。 */
+    private Map<String, Path> scanCorpus() {
+        Path root = Path.of(properties.getCorpusRoot());
+        if (!Files.isDirectory(root)) {
+            throw new IllegalStateException("语料根目录不存在，已中止灌库（不会删除任何已有向量）: " + root);
+        }
+
+        SourceLinkResolver resolver = new SourceLinkResolver(properties.getCorpusRoot());
+        Map<String, Path> files = new TreeMap<>();
+        List<Path> unmapped = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(IncrementalIndexer::isAsciiDoc)
+                    .forEach(path -> {
+                        Path absolute = path.toAbsolutePath();
+                        String docKey = resolver.documentKey(
+                                absolute.getParent().toString(), absolute.getFileName().toString());
+                        if (docKey.isEmpty()) {
+                            // 不在语料根下就算不出 chunk_id，这种文件只能放弃
+                            unmapped.add(absolute);
+                            return;
+                        }
+                        Path previous = files.put(docKey, absolute);
+                        if (previous != null) {
+                            log.warn("docKey 冲突，后者覆盖前者: {} <= {}", absolute, previous);
+                        }
+                    });
+        } catch (IOException e) {
+            throw new UncheckedIOException("扫描语料目录失败: " + root, e);
+        }
+
+        for (Path path : unmapped) {
+            log.warn("文件不在语料根下，跳过: {}", path);
+        }
+        log.info("语料扫描完成: 根={} 待比对文档={} 未映射={}", root, files.size(), unmapped.size());
+        return files;
+    }
+
+    private static boolean isAsciiDoc(Path path) {
+        return path.getFileName().toString().toLowerCase().endsWith(".adoc");
+    }
+
+    /** 切分单篇文档。目录里带上本地绝对路径和文件名，切分器靠它算 chunk_id 和 source。 */
+    private List<TextSegment> split(Path file) {
+        Document document = FileSystemDocumentLoader.loadDocument(file, new TextDocumentParser());
+        return splitter.split(document);
+    }
+
+    /** 取每个片段的 chunk_id 当向量 id，缺一个都不能继续，否则删不掉也更新不了。 */
+    private static List<String> chunkIds(List<TextSegment> segments) {
+        List<String> ids = new ArrayList<>(segments.size());
+        for (TextSegment segment : segments) {
+            String chunkId = segment.metadata().getString("chunk_id");
+            if (chunkId == null || chunkId.isBlank()) {
+                throw new IllegalStateException("片段缺少 chunk_id，无法作为向量 id: "
+                        + segment.text().substring(0, Math.min(40, segment.text().length())));
+            }
+            ids.add(chunkId);
+        }
+        return ids;
+    }
+
+    /** 按 id 删向量。空列表直接跳过：有些实现不接受空集合。 */
+    private void removeVectors(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        store.removeAll(ids);
+    }
+
+    /** 读清单。文件不存在或内容坏了都返回 null，由调用方按全量重建处理。 */
+    private IngestManifest readManifest() {
+        Path file = properties.getManifestFile();
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(file.toFile(), IngestManifest.class);
+        } catch (Exception e) {
+            log.warn("灌库清单读取失败，本次按全量重建处理: {}", file, e);
+            return null;
+        }
+    }
+
+    /** 写清单。先写临时文件再原子替换，避免写一半崩了留下半截 JSON。 */
+    private void writeManifest(IngestManifest manifest) {
+        Path file = properties.getManifestFile();
+        try {
+            createParentDirectories(file);
+            Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(temp.toFile(), manifest);
+            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new UncheckedIOException("写入灌库清单失败: " + file, e);
+        }
+    }
+
+    /** 向量库落盘。只支持内存实现，换成持久化 store 后这里的落盘就该去掉。 */
+    private void serializeStore() {
+        Path file = properties.getStoreFile();
+        if (!(store instanceof InMemoryEmbeddingStore<?> inMemoryStore)) {
+            log.warn("当前向量库不是内存实现，跳过落盘: {}", store.getClass().getName());
+            return;
+        }
+        try {
+            createParentDirectories(file);
+            inMemoryStore.serializeToFile(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("向量库落盘失败: " + file, e);
+        }
+    }
+
+    private static void createParentDirectories(Path file) throws IOException {
+        Path parent = file.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+    }
+
+    /** 文件内容的 sha256，十六进制小写。比 mtime 可靠：换机器、git checkout 后 mtime 全变。 */
+    private static String sha256(Path file) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 不支持 SHA-256", e);
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+}

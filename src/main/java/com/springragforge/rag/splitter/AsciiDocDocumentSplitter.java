@@ -26,12 +26,17 @@ public class AsciiDocDocumentSplitter implements DocumentSplitter {
     // 默认相邻两段重叠字符数：0，表示不重叠。
     static final int DEFAULT_MAX_OVERLAP_SIZE_CHARS = 0;
 
+    /** 切分算法版本号。切分逻辑一改就往上加，让历史 chunk 整体作废。 */
+    private static final String ALGORITHM_VERSION = "asciidoc-v1";
+
     /** 单段字符数上限，超了就往下切。是上限不是目标，段通常比它小很多。 */
     private final int maxSegmentSizeInChars;
     /** 相邻两段重叠的字符数，0 表示不重叠。只在段内被迫切开时才用得上。 */
     private final int maxOverlapSizeInChars;
+    /** 语料根目录换算器，决定 chunk_id 和 source 长什么样。 */
+    private final SourceLinkResolver sourceLinkResolver;
 
-    /** 无参构造：用默认配置（3200 上限，不重叠）。 */
+    /** 无参构造：用默认配置（3200 上限，不重叠，默认语料根）。 */
     public AsciiDocDocumentSplitter() {
         this(DEFAULT_MAX_SEGMENT_SIZE_CHARS, DEFAULT_MAX_OVERLAP_SIZE_CHARS);
     }
@@ -43,14 +48,41 @@ public class AsciiDocDocumentSplitter implements DocumentSplitter {
      * @param maxOverlapSizeInChars 相邻段重叠字符数，必须 >= 0
      */
     public AsciiDocDocumentSplitter(int maxSegmentSizeInChars, int maxOverlapSizeInChars) {
+        this(maxSegmentSizeInChars, maxOverlapSizeInChars, SourceLinkResolver.DEFAULT_CORPUS_ROOT);
+    }
+
+    /**
+     * 指定语料根目录的构造：灌库时用配置里的根，保证文件都能换算出 chunk_id。
+     *
+     * @param corpusRoot 语料根目录，非空
+     */
+    public AsciiDocDocumentSplitter(String corpusRoot) {
+        this(DEFAULT_MAX_SEGMENT_SIZE_CHARS, DEFAULT_MAX_OVERLAP_SIZE_CHARS, corpusRoot);
+    }
+
+    public AsciiDocDocumentSplitter(int maxSegmentSizeInChars, int maxOverlapSizeInChars, String corpusRoot) {
         if (maxSegmentSizeInChars <= 0) {
             throw new IllegalArgumentException("maxSegmentSizeInChars must be positive");
         }
         if (maxOverlapSizeInChars < 0) {
             throw new IllegalArgumentException("maxOverlapSizeInChars must not be negative");
         }
+        if (corpusRoot == null || corpusRoot.isBlank()) {
+            throw new IllegalArgumentException("corpusRoot must not be blank");
+        }
         this.maxSegmentSizeInChars = maxSegmentSizeInChars;
         this.maxOverlapSizeInChars = maxOverlapSizeInChars;
+        this.sourceLinkResolver = new SourceLinkResolver(corpusRoot);
+    }
+
+    /**
+     * 切分签名：算法版本 + 关键参数。
+     *
+     * <p>签名一变，历史 chunk 的边界和内容都可能不同，已有向量不能再被增量复用，
+     * 必须整体重建。增量灌库把它写进 manifest 做比对。
+     */
+    public String signature() {
+        return ALGORITHM_VERSION + "/" + maxSegmentSizeInChars + "/" + maxOverlapSizeInChars;
     }
 
     /**
@@ -81,7 +113,7 @@ public class AsciiDocDocumentSplitter implements DocumentSplitter {
         // 4. 元数据统一在这里挂，前面只负责决定每段文本是什么
         String directoryPath = document.metadata().getString(Document.ABSOLUTE_DIRECTORY_PATH);
         String fileName = document.metadata().getString(Document.FILE_NAME);
-        String documentKey = SourceLinkResolver.documentKey(directoryPath, fileName);
+        String documentKey = sourceLinkResolver.documentKey(directoryPath, fileName);
 
         List<TextSegment> segments = new ArrayList<>();
         int total = drafts.size();
@@ -103,7 +135,7 @@ public class AsciiDocDocumentSplitter implements DocumentSplitter {
                 // 稳定唯一的段标识：文档路径 + 段序号
                 metadata.put("chunk_id", documentKey + "#" + i);
             }
-            String source = SourceLinkResolver.source(directoryPath, fileName, draft.anchor);
+            String source = sourceLinkResolver.source(directoryPath, fileName, draft.anchor);
             if (!source.isEmpty()) {
                 metadata.put("source", source);                 // 官方文档站链接，带锚点
             }

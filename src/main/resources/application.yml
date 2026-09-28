@@ -42,3 +42,13 @@ spring:
           max-idle: 8   # ??????
           min-idle: 0   # ??????
           max-wait: 100 # ??????
+
+rag:
+  ingest:
+    # 语料根目录。下面一层目录是语料源，目前支持 spring-framework / spring-boot / spring-ai。
+    # 灌库按这个根扫全部 .adoc，根之外的 adoc 换不出跳转链接，会被跳过。
+    corpus-root: E:/springDoc/corpus
+    # 向量库落盘位置，启动时从这里加载
+    store-file: data/embedding-store.json
+    # 灌库清单，增量比对靠它；删了就等于全量重建
+    manifest-file: data/ingest-manifest.json

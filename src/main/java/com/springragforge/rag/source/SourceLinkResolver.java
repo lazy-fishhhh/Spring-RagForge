@@ -11,11 +11,26 @@ import java.util.Map;
  *
  * <p>换算只做字符串处理，不用 {@code Path.relativize}：语料路径的盘符大小写、分隔符写法
  * 在不同机器上不一致，Path 会直接抛异常。
+ *
+ * <p>语料根目录可配置：灌库时传当前配置的根，默认 {@value #DEFAULT_CORPUS_ROOT}。
+ * 根目录决定「哪些文件算语料」——根之外的文件换不出 docKey，也就算不出 chunk_id。
  */
 public final class SourceLinkResolver {
 
-    /** 语料根目录。下面一层目录就是一个语料源。 */
-    private static final String CORPUS_ROOT = "E:/springDoc/corpus";
+    /** 默认语料根目录。下面一层目录就是一个语料源。 */
+    public static final String DEFAULT_CORPUS_ROOT = "E:/springDoc/corpus";
+
+    /** 当前使用的语料根目录。 */
+    private final String corpusRoot;
+
+    /** 用默认语料根目录。 */
+    public SourceLinkResolver() {
+        this(DEFAULT_CORPUS_ROOT);
+    }
+
+    public SourceLinkResolver(String corpusRoot) {
+        this.corpusRoot = corpusRoot == null ? "" : corpusRoot;
+    }
 
     /**
      * 一个语料源。
@@ -33,9 +48,6 @@ public final class SourceLinkResolver {
             "spring-ai", new Project("", "https://docs.spring.io/spring-ai/reference/")
     );
 
-    private SourceLinkResolver() {
-    }
-
     /** 本地位置，项目名 + 项目内目录 + 去掉扩展名的文件名。 */
     private record Located(String project, String relativeDir, String fileBase) {
     }
@@ -44,7 +56,7 @@ public final class SourceLinkResolver {
      * 文档标识，形如 {@code spring-boot/reference/pages/web/servlet.adoc}。
      * 相对语料根算，不依赖映射表，用来拼 chunk_id。
      */
-    public static String documentKey(String absoluteDirectoryPath, String fileName) {
+    public String documentKey(String absoluteDirectoryPath, String fileName) {
         Located located = locate(absoluteDirectoryPath, fileName);
         if (located == null) {
             return "";
@@ -58,7 +70,7 @@ public final class SourceLinkResolver {
      *
      * @param anchor 标题锚点 id，没有就传空串；只拼页级链接
      */
-    public static String source(String absoluteDirectoryPath, String fileName, String anchor) {
+    public String source(String absoluteDirectoryPath, String fileName, String anchor) {
         Located located = locate(absoluteDirectoryPath, fileName);
         if (located == null) {
             return "";
@@ -75,16 +87,17 @@ public final class SourceLinkResolver {
     }
 
     /** 把绝对目录路径拆成项目名和项目内目录。不在语料根下则返回 null。 */
-    private static Located locate(String absoluteDirectoryPath, String fileName) {
+    private Located locate(String absoluteDirectoryPath, String fileName) {
         if (absoluteDirectoryPath == null || absoluteDirectoryPath.isBlank()
                 || fileName == null || fileName.isBlank()) {
             return null;
         }
+        String root = normalize(corpusRoot);
         String dir = normalize(absoluteDirectoryPath);
-        if (!dir.toLowerCase().startsWith(CORPUS_ROOT.toLowerCase() + "/")) {
+        if (!dir.toLowerCase().startsWith(root.toLowerCase() + "/")) {
             return null;
         }
-        String rest = dir.substring(CORPUS_ROOT.length() + 1);
+        String rest = dir.substring(root.length() + 1);
         int slash = rest.indexOf('/');
         String project = slash < 0 ? rest : rest.substring(0, slash);
         String relativeDir = slash < 0 ? "" : rest.substring(slash + 1);

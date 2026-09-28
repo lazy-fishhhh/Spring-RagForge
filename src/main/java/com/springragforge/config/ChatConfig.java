@@ -2,6 +2,7 @@ package com.springragforge.config;
 
 import com.springragforge.constant.SystemPrompts;
 import com.springragforge.rag.SourceRegistry;
+import com.springragforge.rag.ingest.IngestProperties;
 import com.springragforge.rag.injector.NumberedContentInjector;
 import com.springragforge.rag.retriever.SourceCapturingContentRetriever;
 import com.springragforge.repository.RedisChatMemoryStore;
@@ -78,11 +79,12 @@ public class ChatConfig {
 
     //构建向量数据库操作对象
     @Bean
-    public EmbeddingStore<TextSegment> store() {
-        // 启动阶段不做任何网络调用：有缓存文件则直接加载，否则返回空存储，由 EmbeddingInitializer 在应用启动完成后灌库
-        Path cacheFile = Path.of("data/embedding-store.json");
-        if (Files.exists(cacheFile)) {
-            return InMemoryEmbeddingStore.fromFile(cacheFile);
+    public EmbeddingStore<TextSegment> store(IngestProperties properties) {
+        // 启动阶段不做任何网络调用：有落盘文件就直接加载，否则返回空存储，
+        // 等手动调 POST /admin/reindex 灌库（灌库逻辑见 IncrementalIndexer）
+        Path storeFile = properties.getStoreFile();
+        if (Files.exists(storeFile)) {
+            return InMemoryEmbeddingStore.fromFile(storeFile);
         }
         return new InMemoryEmbeddingStore<>();
     }

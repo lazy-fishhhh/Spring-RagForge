@@ -317,6 +317,7 @@
         <input id="memoryId" type="text" placeholder="手动填写，作为会话记忆标识">
     </div>
     <button id="newChatBtn" class="btn btn-outline">新对话</button>
+    <button id="reindexBtn" class="btn btn-outline">灌库</button>
 </header>
 
 <!-- 消息区 -->
@@ -2393,6 +2394,27 @@
         pendingText = '';
         streamEnded = false;
         setStreaming(false);
+    });
+
+    // 灌库：调用 POST /admin/reindex，同步返回统计结果
+    const reindexBtn = $('reindexBtn');
+    reindexBtn.addEventListener('click', async () => {
+        reindexBtn.disabled = true;
+        reindexBtn.textContent = '灌库中…';
+        try {
+            const res = await fetch('/admin/reindex', {method: 'POST'});
+            const body = await res.json();
+            if (res.ok) {
+                alert('灌库完成：' + JSON.stringify(body));
+            } else {
+                alert('灌库失败：' + (body.error || res.status));
+            }
+        } catch (err) {
+            alert('灌库出错：' + err.message);
+        } finally {
+            reindexBtn.disabled = false;
+            reindexBtn.textContent = '灌库';
+        }
     });
 </script>
 </body>

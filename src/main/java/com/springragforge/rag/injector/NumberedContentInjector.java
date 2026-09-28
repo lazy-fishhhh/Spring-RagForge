@@ -14,14 +14,14 @@ import java.util.List;
  * 把召回的文档片段拼成带编号和出处的形态再交给模型。
  *
  * <p>默认的 {@code DefaultContentInjector} 只按顺序塞纯文本，没有编号也没有出处，
- * 而系统提示词要求「用 [1][2] 标注来源」「链接逐字复制」。不自己拼的话，编号只能靠模型瞎编，
+ * 而系统提示词要求「用 [ref:1][ref:2] 标注来源」「链接逐字复制」。不自己拼的话，编号只能靠模型瞎编，
  * 出处更是无从谈起。
  *
  * <p>拼出来的形态：
  * <pre>
  * 用户原问题
  *
- * ===== 文档片段 [1] =====
+ * ===== 文档片段 [ref:1] =====
  * 出处：Declaring Advice &gt; Before Advice
  * 链接：https://docs.spring.io/.../advice.html#aop-advice-before
  * 内容：
@@ -50,7 +50,7 @@ public class NumberedContentInjector implements ContentInjector {
         // 用 StringBuilder 是因为片段可能很多，避免频繁字符串拼接产生大量临时对象。
         StringBuilder prompt = new StringBuilder(userMessage.singleText());
 
-        // 逐个片段追加，编号从 1 开始（对应系统提示词里 [1][2] 的写法）。
+        // 逐个片段追加，编号从 1 开始（对应系统提示词里 [ref:1][ref:2] 的写法）。
         for (int i = 0; i < contents.size(); i++) {
             appendFragment(prompt, i + 1, contents.get(i).textSegment());
         }
@@ -64,7 +64,7 @@ public class NumberedContentInjector implements ContentInjector {
     /**
      * 把单个片段按固定模板追加到提示词里：
      * <pre>
-     * ===== 文档片段 [n] =====
+     * ===== 文档片段 [ref:n] =====
      * 出处：...
      * 链接：...
      * 内容：
@@ -78,8 +78,8 @@ public class NumberedContentInjector implements ContentInjector {
         // 每个片段都携带自己的 Metadata（灌库时写入的 heading_path / doc_title / source 等）。
         Metadata metadata = segment.metadata();
 
-        // 片段分隔标题：编号即模型在回答里应引用的 [n]，两边用 ===== 包起来便于模型识别边界。
-        prompt.append("\n\n===== 文档片段 [").append(index).append("] =====\n");
+        // 片段分隔标题：编号即模型在回答里应引用的 [ref:n]，两边用 ===== 包起来便于模型识别边界。
+        prompt.append("\n\n===== 文档片段 [ref:").append(index).append("] =====\n");
 
         // 出处优先取标题路径（如「Declaring Advice > Before Advice」），
         // 取不到就退到文档标题、文件名；全都取不到时 origin 返回空串，这一行就不写。
