@@ -1,0 +1,343 @@
+{
+  "questions": [
+    {
+      "id": "h01",
+      "type": "factual",
+      "question": "我想在项目里发起一次模型对话调用，这个入口对象一般怎么拿到？有哪几种创建方式？",
+      "key_points": [
+        "通过注入的 ChatClient.Builder 定制后 build()",
+        "也可用 ChatClient.create(chatModel) 这类静态方式直接创建"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chatclient.adoc",
+          "section": "Chat Client API > Creating a ChatClient"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f01",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h02",
+      "type": "factual",
+      "question": "模型请求前后我想插好几段处理逻辑，这些逻辑之间的先后由什么决定？组成这套机制的关键类是哪些？",
+      "key_points": [
+        "非流式：CallAdvisor / CallAdvisorChain；流式：StreamAdvisor / StreamAdvisorChain",
+        "请求与响应对象：ChatClientRequest / ChatClientResponse，可共享 advisor context",
+        "getOrder() 决定链中的执行顺序，值小的先执行"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Core Components"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f02",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h03",
+      "type": "factual",
+      "question": "我只想在某一个来源的文档范围内检索，怎么把搜索范围限制住？",
+      "key_points": [
+        "把过滤条件表达式（如 module == 'x'）跟相似度检索请求一起传给 VectorStore",
+        "元数据是写在 Document 上的，检索时按表达式匹配"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Metadata Filters"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f05",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h04",
+      "type": "factual",
+      "question": "一个每次都要新建的对象被注入到长期存在的对象里，我发现拿到的总是同一个旧实例。有什么办法让它每次被调用时都重新创建？",
+      "key_points": [
+        "容器可以覆写容器管理 Bean 上的方法，让它返回另一个 Bean 的查找结果（Lookup Method Injection）",
+        "底层用 CGLIB 动态生成子类来覆写该方法",
+        "限制：被覆写的类和方法都不能是 final"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/dependencies/factory-method-injection.adoc",
+          "section": "Method Injection > Lookup Method Injection"
+        }
+      ],
+      "should_refuse": false,
+      "note": "精确定位题：不写 Prototype/Lookup 术语，靠语义找"
+    },
+    {
+      "id": "h05",
+      "type": "factual",
+      "question": "同一个应用里有两套数据源、两个事务管理器，方法上怎么指明用哪一个？",
+      "key_points": [
+        "注解的 value / transactionManager 属性可指定用哪个事务管理器",
+        "取值可以是事务管理器 Bean 的名字，也可以是 @Qualifier 限定值"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/annotations.adoc",
+          "section": "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`"
+        }
+      ],
+      "should_refuse": false,
+      "note": "精确定位题：不写注解名，考语义"
+    },
+    {
+      "id": "h06",
+      "type": "factual",
+      "question": "要拼一个带路径变量、还可能含中文和空格的链接返给前端，怎么编码才不会出错或被截断？",
+      "key_points": [
+        "UriComponentsBuilder 有两级编码：encode() 先编码模板，展开变量时再严格编码变量",
+        "UriComponents.encode() 是在变量展开之后编码；两者都会把非 ASCII 和非法字符转成转义字节",
+        "选择取决于是否需要保留路径里带保留含义的字符（例如 ;）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-uri-building.adoc",
+          "section": "URI Links > URI Encoding"
+        }
+      ],
+      "should_refuse": false,
+      "note": "口语化题：不出现 UriComponents 术语（答案里才有）"
+    },
+    {
+      "id": "h07",
+      "type": "factual",
+      "question": "并发场景下我想让应用真的监听端口，然后发 HTTP 请求做验证，官方推荐怎么写？",
+      "key_points": [
+        "用 @SpringBootTest(webEnvironment = RANDOM_PORT) 用随机端口起真实服务",
+        "@LocalServerPort 注入实际端口；发请求可自动装配 RestTestClient（配合 @AutoConfigureRestTestClient）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/testing/spring-boot-applications.adoc",
+          "section": "Testing Spring Boot Applications > Testing With a Running Server"
+        }
+      ],
+      "should_refuse": false,
+      "note": "口语化题：不出现 Testing/Running Server 等标题词"
+    },
+    {
+      "id": "h08",
+      "type": "factual",
+      "question": "Spring AI 支持接入哪些向量数据库？（请只列文档里实际收录的）",
+      "key_points": [
+        "只能列举本节列出的实现（Azure、Apache Cassandra、Chroma、Elasticsearch、GemFire 等）",
+        "不得把训练知识里的其它向量库当成文档内容列举 —— 这是语料边界题"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > VectorStore Implementations"
+        }
+      ],
+      "should_refuse": false,
+      "note": "语料边界题：考'只依据语料'，列举语料外的库算错"
+    },
+    {
+      "id": "h09",
+      "type": "multi-hop",
+      "question": "我要把文档灌进向量存储，建表和向量长度（维度）这块怎么处理才不用手工建？",
+      "key_points": [
+        "pgvector 自动配置里可开启 schema 初始化",
+        "维度必须与所用 embedding 模型输出维度一致",
+        "该配置项同时影响建表与后续插入/检索"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m02",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h10",
+      "type": "multi-hop",
+      "question": "框架给了两个不同阶段的扩展点：一个能在对象还没创建时就改配置元数据，一个能在实例化之后把对象包一层。它们分别在什么时候起作用？",
+      "key_points": [
+        "BeanFactoryPostProcessor 在 Bean 定义阶段：可读取并修改配置元数据（bean definitions）",
+        "BeanPostProcessor 在实例化之后：可以包装/代理实例，影响初始化前后行为",
+        "典型应用：AOP 代理、注解处理、属性注入增强"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        },
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m13",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h11",
+      "type": "multi-hop",
+      "question": "浏览器跨域请求被拦、反向代理之后拿到的协议和域名不对，框架内置了哪两个组件分别处理这两件事？",
+      "key_points": [
+        "CORS：跨域请求的预检与响应头处理",
+        "Forwarded Headers：在反向代理后正确还原原始请求的 host/协议/端口"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > CORS"
+        },
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > Forwarded Headers"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m15",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h12",
+      "type": "multi-hop",
+      "question": "我想在本地跑一个开源模型，前置准备有哪些？可调的运行参数放在哪个类里？",
+      "key_points": [
+        "前置：本地安装 Ollama，或用 Testcontainers 方式运行；并把要用的模型拉下来",
+        "运行参数由 OllamaChatOptions 提供（模型、temperature、思考模式等）；旧的 OllamaOptions 已废弃"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Prerequisites"
+        },
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Runtime Options"
+        }
+      ],
+      "should_refuse": false,
+      "note": "跨小节：答案分落在两节"
+    },
+    {
+      "id": "h13",
+      "type": "multi-hop",
+      "question": "MCP 的客户端和服务端分别要引哪个 starter？服务端协议怎么指定？",
+      "key_points": [
+        "客户端：spring-ai-starter-mcp-client（支持 STDIO / SSE / Streamable-HTTP 等传输）",
+        "服务端：spring-ai-starter-mcp-server，用 spring.ai.mcp.server.protocol 指定协议/传输"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/mcp/mcp-client-boot-starter-docs.adoc",
+          "section": "MCP Client Boot Starter > Starters"
+        },
+        {
+          "file": "spring-ai/api/mcp/mcp-server-boot-starter-docs.adoc",
+          "section": "MCP Server Boot Starter > MCP Server Boot Starters"
+        }
+      ],
+      "should_refuse": false,
+      "note": "跨文件：客户端与服务端 starter 在两个文件；题干必须出现 MCP/starter，属固有术语"
+    },
+    {
+      "id": "h14",
+      "type": "multi-hop",
+      "question": "方法正常返回后、抛异常时，我想分别执行不同的处理逻辑，切面里对应哪几种通知？各自用什么注解？",
+      "key_points": [
+        "正常返回时执行：@AfterReturning",
+        "抛异常退出时执行：@AfterThrowing"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Returning Advice"
+        },
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Throwing Advice"
+        }
+      ],
+      "should_refuse": false,
+      "note": "同类两节对比，考是否能同时召回两种通知"
+    },
+    {
+      "id": "r01",
+      "type": "refuse",
+      "question": "Kafka 的 SASL/PLAIN 认证怎么配置？",
+      "key_points": [
+        "应明确拒答：语料是 Spring Framework/Boot/AI 官方文档，不含 Kafka 配置"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "question": "Nacos 集群怎么部署、配置怎么持久化到 MySQL？",
+      "key_points": [
+        "应明确拒答：语料不含 Nacos"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "question": "Vue 3 里怎么用 EventSource 接收后端的 SSE 流？",
+      "key_points": [
+        "应明确拒答：语料不含前端内容"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r04",
+      "type": "refuse",
+      "question": "怎么用 Logstash 收集 Spring Boot 的日志到 Elasticsearch？",
+      "key_points": [
+        "应明确拒答：语料不含 Logstash/ELK 采集链路"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r05",
+      "type": "refuse",
+      "question": "Spring Security 里 OAuth2 登录怎么配置？",
+      "key_points": [
+        "应明确拒答：虽属 Spring 生态，但本次语料未收录 Security 文档"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r06",
+      "type": "refuse",
+      "question": "Sentinel 的熔断降级规则怎么配置？",
+      "key_points": [
+        "应明确拒答：语料不含 Sentinel/熔断降级组件"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    }
+  ]
+}

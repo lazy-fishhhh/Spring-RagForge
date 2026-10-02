@@ -1,0 +1,205 @@
+{
+  "meta": {
+    "name": "Spring Documentation RAG Evaluation Set · Refusal",
+    "version": "1.1",
+    "language": "en",
+    "total": 17,
+    "refuse_scope_definitions": {
+      "out-of-domain": "The topic is entirely outside the Spring Framework/Boot/AI documentation corpus.",
+      "in-domain-absent": "The topic belongs to the broader Spring ecosystem but is not covered by this corpus."
+    },
+    "how_to_judge": [
+      "A correct answer must explicitly refuse rather than answer from training knowledge.",
+      "Answers that provide concrete configuration/code from outside the corpus count as hallucination and should be scored as failures."
+    ]
+  },
+  "questions": [
+    {
+      "id": "r01",
+      "type": "refuse",
+      "question": "How do I configure SASL/PLAIN authentication for Kafka?",
+      "key_points": [
+        "Should explicitly refuse: the corpus is the Spring Framework/Boot/AI official documentation and does not include Kafka configuration."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "question": "How do I write code to implement a Redis distributed lock with Redisson?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Redisson / distributed lock content."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "question": "How do I configure the pagination plugin in MyBatis-Plus?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include MyBatis-Plus."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r04",
+      "type": "refuse",
+      "question": "How does a Dubbo service provider expose an interface, and how do I write @DubboService?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Dubbo."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r05",
+      "type": "refuse",
+      "question": "How do I deploy a Nacos cluster and persist its configuration to MySQL?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Nacos."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r06",
+      "type": "refuse",
+      "question": "How do I implement request rate limiting in Spring Cloud Gateway?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Spring Cloud components."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r07",
+      "type": "refuse",
+      "question": "How do I tune JVM heap memory? How do I troubleshoot an online OOM?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include JVM tuning/troubleshooting content."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r08",
+      "type": "refuse",
+      "question": "How do I use EventSource in Vue 3 to receive an SSE stream from the backend?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include frontend content."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r09",
+      "type": "refuse",
+      "question": "How do I deploy a Spring Boot application to Kubernetes?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include K8s / container-orchestration deployment."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r10",
+      "type": "refuse",
+      "question": "How do I implement multipart upload of large files with MinIO?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include MinIO / object storage content."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r11",
+      "type": "refuse",
+      "question": "How do I use Logstash to collect Spring Boot logs into Elasticsearch?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include the Logstash/ELK collection pipeline."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r12",
+      "type": "refuse",
+      "question": "How do I write a RAG question-answering service with LangChain4j?",
+      "key_points": [
+        "Should explicitly refuse: the corpus is Spring AI documentation and does not include LangChain4j content (a model answering from training knowledge would be hallucinating)."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r13",
+      "type": "refuse",
+      "question": "Under what circumstances does MySQL add a gap lock?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include MySQL locking mechanisms."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r14",
+      "type": "refuse",
+      "question": "How do I configure OAuth2 login in Spring Security?",
+      "key_points": [
+        "Should explicitly refuse: although it belongs to the Spring ecosystem, this corpus does not include the Security documentation."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r15",
+      "type": "refuse",
+      "question": "How do I customize Actuator health check indicators?",
+      "key_points": [
+        "Should explicitly refuse: this corpus does not include the Actuator documentation."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r16",
+      "type": "refuse",
+      "question": "How does Spring Batch handle large-batch data partitioning?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Spring Batch."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r17",
+      "type": "refuse",
+      "question": "How do I configure circuit-breaking and degradation rules in Sentinel?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Sentinel / circuit-breaking components."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    }
+  ]
+}

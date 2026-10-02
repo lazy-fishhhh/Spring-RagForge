@@ -1,0 +1,191 @@
+{
+  "questions": [
+    {
+      "id": "r01",
+      "type": "refuse",
+      "question": "Kafka 的 SASL/PLAIN 认证怎么配置？",
+      "key_points": [
+        "应明确拒答：语料是 Spring Framework/Boot/AI 官方文档，不含 Kafka 配置"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "question": "用 Redisson 实现 Redis 分布式锁的代码怎么写？",
+      "key_points": [
+        "应明确拒答：语料不含 Redisson / 分布式锁内容"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "question": "MyBatis-Plus 的分页插件怎么配置？",
+      "key_points": [
+        "应明确拒答：语料不含 MyBatis-Plus"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r04",
+      "type": "refuse",
+      "question": "Dubbo 的服务提供者怎么暴露接口、怎么写 @DubboService？",
+      "key_points": [
+        "应明确拒答：语料不含 Dubbo"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r05",
+      "type": "refuse",
+      "question": "Nacos 集群怎么部署、配置怎么持久化到 MySQL？",
+      "key_points": [
+        "应明确拒答：语料不含 Nacos"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r06",
+      "type": "refuse",
+      "question": "Spring Cloud Gateway 怎么做请求限流？",
+      "key_points": [
+        "应明确拒答：语料不含 Spring Cloud 组件"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r07",
+      "type": "refuse",
+      "question": "JVM 堆内存怎么调优？线上 OOM 怎么排查？",
+      "key_points": [
+        "应明确拒答：语料不含 JVM 调优/排查内容"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r08",
+      "type": "refuse",
+      "question": "Vue 3 里怎么用 EventSource 接收后端的 SSE 流？",
+      "key_points": [
+        "应明确拒答：语料不含前端内容"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r09",
+      "type": "refuse",
+      "question": "怎么把 Spring Boot 应用部署到 Kubernetes 上？",
+      "key_points": [
+        "应明确拒答：语料不含 K8s/容器编排部署"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r10",
+      "type": "refuse",
+      "question": "用 MinIO 实现大文件分片上传怎么做？",
+      "key_points": [
+        "应明确拒答：语料不含 MinIO/对象存储内容"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r11",
+      "type": "refuse",
+      "question": "怎么用 Logstash 收集 Spring Boot 的日志到 Elasticsearch？",
+      "key_points": [
+        "应明确拒答：语料不含 Logstash/ELK 采集链路"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r12",
+      "type": "refuse",
+      "question": "用 LangChain4j 写一个 RAG 问答服务，代码怎么写？",
+      "key_points": [
+        "应明确拒答：语料是 Spring AI 文档，不含 LangChain4j 内容（模型若照训练知识作答即为幻觉）"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r13",
+      "type": "refuse",
+      "question": "MySQL 的间隙锁（gap lock）在什么情况下会加？",
+      "key_points": [
+        "应明确拒答：语料不含 MySQL 锁机制"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r14",
+      "type": "refuse",
+      "question": "Spring Security 里 OAuth2 登录怎么配置？",
+      "key_points": [
+        "应明确拒答：虽属 Spring 生态，但本次语料未收录 Security 文档"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r15",
+      "type": "refuse",
+      "question": "怎么自定义 Actuator 的健康检查指标？",
+      "key_points": [
+        "应明确拒答：本次语料未收录 Actuator 文档"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r16",
+      "type": "refuse",
+      "question": "Spring Batch 怎么做大批量数据分片处理？",
+      "key_points": [
+        "应明确拒答：语料不含 Spring Batch"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r17",
+      "type": "refuse",
+      "question": "Sentinel 的熔断降级规则怎么配置？",
+      "key_points": [
+        "应明确拒答：语料不含 Sentinel/熔断降级组件"
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    }
+  ]
+}

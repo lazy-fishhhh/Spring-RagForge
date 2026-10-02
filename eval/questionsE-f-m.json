@@ -1,0 +1,477 @@
+{
+  "meta": {
+    "name": "Spring Documentation RAG Evaluation Set · HARD",
+    "version": "1.1",
+    "language": "en",
+    "total": 25,
+    "composition": {
+      "detitled_rewrite": 15,
+      "new_hard_cases": 10
+    },
+    "relation_to_easy_set": "h01-h15 correspond one-to-one with f01/f02/f05/f06/f08/f10/f12/f13/f14/f15/f17/m02/m10/m13/m15 in questions.json; the score difference between the two sets is the inflation caused by question leakage.",
+    "how_to_judge": [
+      "Always report Recall@1 (Recall@3 saturates on the easy set; only Recall@1 is discriminative).",
+      "For multi-hop questions, report both hit-any and hit-all (questions like h17 require both sources to be hit to count as complete).",
+      "Add a score column in the CSV (used for setting the refusal threshold).",
+      "Hit criterion: sourcePath matches file AND gold section is a prefix/contained in the chunk heading_path.",
+      "This set does not include refuse questions; refusal capability is still judged using the 17 refuse questions in questions.json."
+    ],
+    "judge_rules": {
+      "h16": "Precise-location question: the terms Prototype/Lookup are intentionally omitted from the question; retrieve by semantics.",
+      "h17": "Same-title section distractor: both files contain a section with the same title; requires exact file+section match (recommended to judge by hit-all).",
+      "h21": "Precise-location question: the annotation name is intentionally omitted from the question; retrieve by semantics.",
+      "h23": "Colloquial phrasing question: the term UriComponents does not appear in the question (it appears only in the answer).",
+      "h24": "Colloquial phrasing question: title words such as Testing / Running Server must not appear in the question.",
+      "h25": "Corpus-boundary question: only implementations listed in this section count; listing vector stores outside the corpus counts as wrong."
+    },
+    "run": "mvn test -Dtest=RetrievalEvalTest -Deval.run=true -Deval.questions=eval/questions-hard.json -Deval.config=hard-baseline",
+    "expectation": "Hard set scores should be clearly lower than the easy set (otherwise the questions are still too shallow)."
+  },
+  "questions": [
+    {
+      "id": "h01",
+      "type": "factual",
+      "question": "I want to initiate a model chat call in my project. How do I typically obtain the entry-point object, and what are the ways to create it?",
+      "key_points": [
+        "Customize an injected ChatClient.Builder and call build().",
+        "Alternatively, create it directly via static methods such as ChatClient.create(chatModel)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chatclient.adoc",
+          "section": "Chat Client API > Creating a ChatClient"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h02",
+      "type": "factual",
+      "question": "I want to insert several pieces of processing logic before and after a model request. What determines the order in which these logics run, and what are the key classes that make up this mechanism?",
+      "key_points": [
+        "Non-streaming: CallAdvisor / CallAdvisorChain; streaming: StreamAdvisor / StreamAdvisorChain.",
+        "Request and response objects: ChatClientRequest / ChatClientResponse, which can share an advisor context.",
+        "getOrder() determines the execution order in the chain; smaller values run first."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Core Components"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h03",
+      "type": "factual",
+      "question": "I only want to retrieve within documents from one specific source. How do I restrict the search scope?",
+      "key_points": [
+        "Pass a filter expression (e.g. module == 'x') together with the similarity search request to the VectorStore.",
+        "Metadata is written on the Document, and is matched by the expression at retrieval time."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Metadata Filters"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h04",
+      "type": "factual",
+      "question": "I want to load a batch of documents into a vector store for question answering. Where should the out-of-the-box dependencies, connection, and dimension configuration go, and what are they?",
+      "key_points": [
+        "Add the pgvector vector store starter dependency.",
+        "Configuration items live under spring.ai.vectorstore.pgvector.* (e.g. schema initialization, dimensions, index type, etc.)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h05",
+      "type": "factual",
+      "question": "There is a group of my own configuration items in the configuration file. How do I bind them in code using a Java class and also perform validation along the way?",
+      "key_points": [
+        "Annotate the class with @ConfigurationProperties, together with @EnableConfigurationProperties / @ConfigurationPropertiesScan or registering it as a bean.",
+        "Relaxed binding is supported (kebab-case in the configuration file can bind to camelCase fields)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/features/external-config.adoc",
+          "section": "Externalized Configuration > Type-safe Configuration Properties"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h06",
+      "type": "factual",
+      "question": "Logs from many third-party components are too noisy. I don't want to write one logger per package. Can I adjust their levels in groups all at once?",
+      "key_points": [
+        "Define log groups with logging.group.<name>.",
+        "Then set the level for the whole group with logging.level.<group-name>."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/features/logging.adoc",
+          "section": "Logging > Log Groups"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h07",
+      "type": "factual",
+      "question": "I want to initialize a connection pool when an object is created and release resources when it is destroyed. What are the ways to write this?",
+      "key_points": [
+        "Annotation approach: @PostConstruct / @PreDestroy.",
+        "Interface approach: InitializingBean / DisposableBean.",
+        "Declarative approach: @Bean(initMethod=..., destroyMethod=...)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-nature.adoc",
+          "section": "Customizing the Nature of a Bean > Lifecycle Callbacks"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h08",
+      "type": "factual",
+      "question": "The framework provides extension points after an object is instantiated and before/after initialization. I want to wrap the object there (e.g. with a proxy). Which interface should I implement, and which of the two callbacks runs first?",
+      "key_points": [
+        "Insert custom logic after bean instantiation and before/after initialization (two callbacks: before/after initialization).",
+        "A typical use is wrapping or proxying beans (for example, AOP proxies are produced at this layer)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h09",
+      "type": "factual",
+      "question": "There is a scope where every retrieval creates a new instance. Who is responsible for recycling and cleaning up these instances?",
+      "key_points": [
+        "Every request for that bean creates a new instance (both injection and getBean create a new one).",
+        "Spring does not manage the full lifecycle of prototype beans: configured destruction callbacks are not called, and the caller must clean up itself."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-scopes.adoc",
+          "section": "Bean Scopes > The Prototype Scope"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h10",
+      "type": "factual",
+      "question": "When an inner method fails and rolls back, I don't want it to affect the outer result that has already been committed. How should the annotation be set? Will the inner and outer transactions affect each other?",
+      "key_points": [
+        "Use an independent physical transaction for each transaction scope, never participating in an existing outer transaction.",
+        "The inner and outer transactions can commit or roll back independently; the outer is not affected by an inner rollback, and inner locks are released immediately after completion.",
+        "The inner transaction can declare its own isolation level/timeout/read-only and does not inherit from the outer.",
+        "The documentation warns: the inner transaction occupies an extra connection, and abuse may exhaust the connection pool or even cause deadlocks."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/tx-propagation.adoc",
+          "section": "Transaction Propagation > Understanding `PROPAGATION_REQUIRES_NEW`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h11",
+      "type": "factual",
+      "question": "An endpoint needs to wait for an asynchronous result before returning. How do I release the request-handling thread first and respond only when the result arrives?",
+      "key_points": [
+        "Take request handling off the Servlet container thread to avoid occupying the thread for a long time.",
+        "The controller returns a DeferredResult; after the backend thread completes its sequence, setResult triggers the response."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-ann-async.adoc",
+          "section": "Asynchronous Requests > `DeferredResult`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h12",
+      "type": "multi-hop",
+      "question": "I want to load documents into a vector store. How do I handle table creation and vector length (dimensions) so that I don't have to create them manually?",
+      "key_points": [
+        "In the pgvector auto-configuration, schema initialization can be enabled.",
+        "The dimensions must match the output dimensions of the embedding model being used.",
+        "This configuration item affects both table creation and subsequent inserts/retrieval."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h13",
+      "type": "multi-hop",
+      "question": "I want to insert my own logic into the model call chain (logging elapsed time or rewriting the request both work). What methods do I need to implement, and how do I call the next node in the chain?",
+      "key_points": [
+        "Implement the CallAdvisor / StreamAdvisor interface and provide getName() and getOrder().",
+        "In adviseCall/adviseStream, process the request, call the next entity in the chain as needed, and finally process the response.",
+        "The request/response objects carry a shareable context."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Implementing an Advisor"
+        },
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > API Overview"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h14",
+      "type": "multi-hop",
+      "question": "The framework provides two extension points at different stages: one can modify configuration metadata before an object is created, and the other can wrap an object after it is instantiated. When does each of them take effect?",
+      "key_points": [
+        "BeanFactoryPostProcessor works at the bean-definition stage: it can read and modify configuration metadata (bean definitions).",
+        "BeanPostProcessor works after instantiation: it can wrap/proxy instances and affect behavior before and after initialization.",
+        "Typical uses: AOP proxies, annotation processing, property-injection enhancement."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        },
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h15",
+      "type": "multi-hop",
+      "question": "Browser cross-origin requests are blocked, and after a reverse proxy the protocol and domain received are incorrect. Which two built-in framework components handle these two things respectively?",
+      "key_points": [
+        "CORS: preflight and response-header handling for cross-origin requests.",
+        "Forwarded Headers: correctly restore the original request's host/protocol/port behind a reverse proxy."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > CORS"
+        },
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > Forwarded Headers"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h16",
+      "type": "factual",
+      "question": "An object that should be newly created every time is injected into a long-lived object, but I find I always get the same old instance. How can I make it be recreated on every call?",
+      "key_points": [
+        "The container can override a method on a container-managed bean so that it returns a lookup result for another bean (Lookup Method Injection).",
+        "Under the hood it uses CGLIB to dynamically generate a subclass that overrides the method.",
+        "Limitation: neither the overridden class nor the method may be final."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/dependencies/factory-method-injection.adoc",
+          "section": "Method Injection > Lookup Method Injection"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h17",
+      "type": "multi-hop",
+      "question": "Both filter retrieval results by field. How should the Qdrant and PGVector stores each do this?",
+      "key_points": [
+        "Both use the same generic metadata filter expression (filterExpression).",
+        "The syntax is the same, but they belong to the respective sections of the two stores."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/qdrant.adoc",
+          "section": "Qdrant > Metadata Filtering"
+        },
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Metadata filtering"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h18",
+      "type": "multi-hop",
+      "question": "I want to run an open-source model locally. What are the prerequisites, and in which class are the tunable runtime options located?",
+      "key_points": [
+        "Prerequisites: install Ollama locally, or run it via Testcontainers; and pull the model you want to use.",
+        "Runtime options are provided by OllamaChatOptions (model, temperature, thinking mode, etc.); the older OllamaOptions is deprecated."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Prerequisites"
+        },
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Runtime Options"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h19",
+      "type": "multi-hop",
+      "question": "How do I enable auto-configuration for storing vectors in Redis? And which section covers table creation and initialization?",
+      "key_points": [
+        "The Redis vector store provides Spring Boot auto-configuration; just add the corresponding starter.",
+        "Schema initialization is a general vector-store topic, controlled by a configuration item that decides whether tables/indexes are created automatically."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/redis.adoc",
+          "section": "Redis > Auto-configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h20",
+      "type": "multi-hop",
+      "question": "Which starter should be added for the MCP client and which for the MCP server respectively? How is the server protocol specified?",
+      "key_points": [
+        "Client: spring-ai-starter-mcp-client (supports STDIO / SSE / Streamable-HTTP and other transports).",
+        "Server: spring-ai-starter-mcp-server, with spring.ai.mcp.server.protocol specifying the protocol/transport."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/mcp/mcp-client-boot-starter-docs.adoc",
+          "section": "MCP Client Boot Starter > Starters"
+        },
+        {
+          "file": "spring-ai/api/mcp/mcp-server-boot-starter-docs.adoc",
+          "section": "MCP Server Boot Starter > MCP Server Boot Starters"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h21",
+      "type": "factual",
+      "question": "An application has two data sources and two transaction managers. How do I indicate on a method which one to use?",
+      "key_points": [
+        "The annotation's value / transactionManager attribute can specify which transaction manager to use.",
+        "The value can be the bean name of the transaction manager, or a @Qualifier value."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/annotations.adoc",
+          "section": "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h22",
+      "type": "multi-hop",
+      "question": "After a method returns normally, and when it throws an exception, I want to execute different processing logic respectively. Which advice types in an aspect correspond to these, and which annotations are used for each?",
+      "key_points": [
+        "Executed on normal return: @AfterReturning.",
+        "Executed on exit by exception: @AfterThrowing."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Returning Advice"
+        },
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Throwing Advice"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h23",
+      "type": "factual",
+      "question": "I need to build a link that contains path variables and may also contain Chinese characters and spaces, and return it to the frontend. How do I encode it so it does not break or get truncated?",
+      "key_points": [
+        "UriComponentsBuilder has two levels of encoding: encode() first encodes the template, then strictly encodes variables when they are expanded.",
+        "UriComponents.encode() encodes after variable expansion; both convert non-ASCII and illegal characters into escaped bytes.",
+        "The choice depends on whether characters with reserved meaning in the path (e.g. ;) need to be preserved."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-uri-building.adoc",
+          "section": "URI Links > URI Encoding"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h24",
+      "type": "factual",
+      "question": "In a concurrent scenario, I want the application to actually listen on a port and then send HTTP requests to verify it. What is the officially recommended way to write this?",
+      "key_points": [
+        "Use @SpringBootTest(webEnvironment = RANDOM_PORT) to start a real server on a random port.",
+        "Inject the actual port with @LocalServerPort; to send requests, autowire RestTestClient (together with @AutoConfigureRestTestClient)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/testing/spring-boot-applications.adoc",
+          "section": "Testing Spring Boot Applications > Testing With a Running Server"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h25",
+      "type": "factual",
+      "question": "Which vector databases does Spring AI support? (List only those actually covered in the documentation.)",
+      "key_points": [
+        "Only list the implementations covered in this section (Azure, Apache Cassandra, Chroma, Elasticsearch, GemFire, etc.).",
+        "Do not list other vector stores from training knowledge as if they were in the documentation — this is a corpus-boundary question."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > VectorStore Implementations"
+        }
+      ],
+      "should_refuse": false
+    }
+  ]
+}

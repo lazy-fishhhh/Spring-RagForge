@@ -1,0 +1,509 @@
+{
+  "meta": {
+    "name": "Spring 文档 RAG 评测集 · HARD 集",
+    "version": "1.0",
+    "created": "2026-09-29",
+    "total": 25,
+    "composition": {
+      "去标题化改写": 15,
+      "新增难例": 10
+    },
+    "relation_to_easy_set": "h01-h15 与 questions.json 的 f01/f02/f05/f06/f08/f10/f12/f13/f14/f15/f17/m02/m10/m13/m15 一一对应（看 derived_from），两组分数之差就是'题面泄题'造成的虚高",
+    "how_to_judge": [
+      "Recall@1 必报（easy 集上 Recall@3 已饱和，Recall@1 才有区分度）",
+      "多跳题同时报 hit-any 与 hit-all（16/17 号这类题要两个来源都命中才算完整）",
+      "CSV 增加 score 列（用于定拒答阈值）",
+      "命中判定沿用：sourcePath 匹配 file + gold section 是块 heading_path 的前缀/包含",
+      "本集合不含 refuse 题；拒答能力仍用 questions.json 的 17 道判"
+    ],
+    "run": "mvn test -Dtest=RetrievalEvalTest -Deval.run=true -Deval.questions=eval/questions-hard.json -Deval.config=hard-baseline",
+    "expectation": "hard 集分数应明显低于 easy 集（否则说明题目还是太浅）"
+  },
+  "questions": [
+    {
+      "id": "h01",
+      "type": "factual",
+      "question": "我想在项目里发起一次模型对话调用，这个入口对象一般怎么拿到？有哪几种创建方式？",
+      "key_points": [
+        "通过注入的 ChatClient.Builder 定制后 build()",
+        "也可用 ChatClient.create(chatModel) 这类静态方式直接创建"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chatclient.adoc",
+          "section": "Chat Client API > Creating a ChatClient"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f01",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h02",
+      "type": "factual",
+      "question": "模型请求前后我想插好几段处理逻辑，这些逻辑之间的先后由什么决定？组成这套机制的关键类是哪些？",
+      "key_points": [
+        "非流式：CallAdvisor / CallAdvisorChain；流式：StreamAdvisor / StreamAdvisorChain",
+        "请求与响应对象：ChatClientRequest / ChatClientResponse，可共享 advisor context",
+        "getOrder() 决定链中的执行顺序，值小的先执行"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Core Components"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f02",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h03",
+      "type": "factual",
+      "question": "我只想在某一个来源的文档范围内检索，怎么把搜索范围限制住？",
+      "key_points": [
+        "把过滤条件表达式（如 module == 'x'）跟相似度检索请求一起传给 VectorStore",
+        "元数据是写在 Document 上的，检索时按表达式匹配"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Metadata Filters"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f05",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h04",
+      "type": "factual",
+      "question": "我要把一批文档灌进向量存储做问答，开箱可用的依赖、连接和维度这些配置该放哪、有哪些？",
+      "key_points": [
+        "引入 pgvector 的 vector store starter 依赖",
+        "配置项在 spring.ai.vectorstore.pgvector.* 下（如 schema 初始化、维度、索引类型等）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f06",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h05",
+      "type": "factual",
+      "question": "配置文件里有一组我自己的配置项，怎么在代码里用一个 Java 类接住它们、还能顺带做校验？",
+      "key_points": [
+        "用 @ConfigurationProperties 标注类，配合 @EnableConfigurationProperties / @ConfigurationPropertiesScan 或作为 Bean 注册",
+        "支持宽松绑定（配置文件里 kebab-case 也能绑到驼峰字段）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/features/external-config.adoc",
+          "section": "Externalized Configuration > Type-safe Configuration Properties"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f08",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h06",
+      "type": "factual",
+      "question": "很多第三方组件的日志太吵，我不想一个个包去写，能不能分组一次性调级别？",
+      "key_points": [
+        "用 logging.group.<name> 定义日志组",
+        "再用 logging.level.<组名> 统一设置该组级别"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/features/logging.adoc",
+          "section": "Logging > Log Groups"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f10",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h07",
+      "type": "factual",
+      "question": "我想在对象创建时初始化连接池、销毁时释放资源，有哪几种写法？",
+      "key_points": [
+        "注解方式：@PostConstruct / @PreDestroy",
+        "接口方式：InitializingBean / DisposableBean",
+        "声明方式：@Bean(initMethod=..., destroyMethod=...)"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-nature.adoc",
+          "section": "Customizing the Nature of a Bean > Lifecycle Callbacks"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f12",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h08",
+      "type": "factual",
+      "question": "框架在实例化对象之后、初始化前后给了扩展点，我想在那里把对象包一层（比如代理），该实现哪个接口？两个回调谁先谁后？",
+      "key_points": [
+        "在 Bean 实例化之后、初始化前后插入自定义逻辑（before/after initialization 两个回调）",
+        "典型的用途是包装或代理 Bean（例如 AOP 代理就是这一层产生的）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f13",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h09",
+      "type": "factual",
+      "question": "有一种作用域每次取都会新建实例，那这些实例的回收和清理由谁负责？",
+      "key_points": [
+        "每次请求该 Bean 都创建一个新实例（注入或 getBean 都会新建）",
+        "Spring 不管理 prototype Bean 的完整生命周期：配置的 destruction 回调不会被调用，需调用方自行清理"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-scopes.adoc",
+          "section": "Bean Scopes > The Prototype Scope"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f14",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h10",
+      "type": "factual",
+      "question": "内层方法失败回滚时，我不想影响外层已经提交的结果，注解该怎么设？内外层的事务会互相影响吗？",
+      "key_points": [
+        "为每个事务范围使用独立的物理事务，从不参与外层已有事务",
+        "内外层可独立提交或回滚，外层不受内层回滚影响，内层锁在完成后立即释放",
+        "内层可自己声明隔离级别/超时/只读，不继承外层",
+        "文档警告：内层会额外占用连接，滥用可能导致连接池耗尽甚至死锁"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/tx-propagation.adoc",
+          "section": "Transaction Propagation > Understanding `PROPAGATION_REQUIRES_NEW`"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f15",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h11",
+      "type": "factual",
+      "question": "接口要等一个异步结果才能返回，怎么先把处理请求的线程放走、等结果到了再响应？",
+      "key_points": [
+        "把请求处理从 Servlet 容器线程上放走，避免长期占用线程",
+        "控制器返回 DeferredResult，后端线程序列完成后 setResult 触发响应"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-ann-async.adoc",
+          "section": "Asynchronous Requests > `DeferredResult`"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "f17",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h12",
+      "type": "multi-hop",
+      "question": "我要把文档灌进向量存储，建表和向量长度（维度）这块怎么处理才不用手工建？",
+      "key_points": [
+        "pgvector 自动配置里可开启 schema 初始化",
+        "维度必须与所用 embedding 模型输出维度一致",
+        "该配置项同时影响建表与后续插入/检索"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m02",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h13",
+      "type": "multi-hop",
+      "question": "我想在模型调用链上插一段自己的逻辑（记录耗时、改写请求都行），要落地得实现哪些方法？链上前后节点怎么调？",
+      "key_points": [
+        "实现 CallAdvisor / StreamAdvisor 接口，并给出 getName()、getOrder()",
+        "在 adviseCall/adviseStream 里处理请求、按需调用链上的下一个实体，最后处理响应",
+        "请求/响应对象里带着可共享的 context"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Implementing an Advisor"
+        },
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > API Overview"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m10",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h14",
+      "type": "multi-hop",
+      "question": "框架给了两个不同阶段的扩展点：一个能在对象还没创建时就改配置元数据，一个能在实例化之后把对象包一层。它们分别在什么时候起作用？",
+      "key_points": [
+        "BeanFactoryPostProcessor 在 Bean 定义阶段：可读取并修改配置元数据（bean definitions）",
+        "BeanPostProcessor 在实例化之后：可以包装/代理实例，影响初始化前后行为",
+        "典型应用：AOP 代理、注解处理、属性注入增强"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        },
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m13",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h15",
+      "type": "multi-hop",
+      "question": "浏览器跨域请求被拦、反向代理之后拿到的协议和域名不对，框架内置了哪两个组件分别处理这两件事？",
+      "key_points": [
+        "CORS：跨域请求的预检与响应头处理",
+        "Forwarded Headers：在反向代理后正确还原原始请求的 host/协议/端口"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > CORS"
+        },
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > Forwarded Headers"
+        }
+      ],
+      "should_refuse": false,
+      "derived_from": "m15",
+      "note": "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）"
+    },
+    {
+      "id": "h16",
+      "type": "factual",
+      "question": "一个每次都要新建的对象被注入到长期存在的对象里，我发现拿到的总是同一个旧实例。有什么办法让它每次被调用时都重新创建？",
+      "key_points": [
+        "容器可以覆写容器管理 Bean 上的方法，让它返回另一个 Bean 的查找结果（Lookup Method Injection）",
+        "底层用 CGLIB 动态生成子类来覆写该方法",
+        "限制：被覆写的类和方法都不能是 final"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/dependencies/factory-method-injection.adoc",
+          "section": "Method Injection > Lookup Method Injection"
+        }
+      ],
+      "should_refuse": false,
+      "note": "精确定位题：不写 Prototype/Lookup 术语，靠语义找"
+    },
+    {
+      "id": "h17",
+      "type": "multi-hop",
+      "question": "同样是按字段过滤检索结果，Qdrant 和 PGVector 这两个存储各自该怎么做？",
+      "key_points": [
+        "两者都用同一套通用元数据过滤表达式（filterExpression）",
+        "写法一致，但分属两个存储各自的章节"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/qdrant.adoc",
+          "section": "Qdrant > Metadata Filtering"
+        },
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Metadata filtering"
+        }
+      ],
+      "should_refuse": false,
+      "note": "同名章节干扰题：两个文件都有该节，要求 file+section 双重精确（建议按 hit-all 判）"
+    },
+    {
+      "id": "h18",
+      "type": "multi-hop",
+      "question": "我想在本地跑一个开源模型，前置准备有哪些？可调的运行参数放在哪个类里？",
+      "key_points": [
+        "前置：本地安装 Ollama，或用 Testcontainers 方式运行；并把要用的模型拉下来",
+        "运行参数由 OllamaChatOptions 提供（模型、temperature、思考模式等）；旧的 OllamaOptions 已废弃"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Prerequisites"
+        },
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Runtime Options"
+        }
+      ],
+      "should_refuse": false,
+      "note": "跨小节：答案分落在两节"
+    },
+    {
+      "id": "h19",
+      "type": "multi-hop",
+      "question": "把向量存到 Redis 里怎么开自动装配？建表和初始化这一步又归哪一节管？",
+      "key_points": [
+        "Redis 向量存储提供 Spring Boot 自动配置，引入对应 starter 即可",
+        "schema 初始化是向量库的通用话题，由配置项控制是否自动建表/建索引"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/redis.adoc",
+          "section": "Redis > Auto-configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false,
+      "note": "跨文件：自动配置在 redis 篇、schema 初始化在总览篇（key_points 第 2 条建议人工核一眼）"
+    },
+    {
+      "id": "h20",
+      "type": "multi-hop",
+      "question": "MCP 的客户端和服务端分别要引哪个 starter？服务端协议怎么指定？",
+      "key_points": [
+        "客户端：spring-ai-starter-mcp-client（支持 STDIO / SSE / Streamable-HTTP 等传输）",
+        "服务端：spring-ai-starter-mcp-server，用 spring.ai.mcp.server.protocol 指定协议/传输"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/mcp/mcp-client-boot-starter-docs.adoc",
+          "section": "MCP Client Boot Starter > Starters"
+        },
+        {
+          "file": "spring-ai/api/mcp/mcp-server-boot-starter-docs.adoc",
+          "section": "MCP Server Boot Starter > MCP Server Boot Starters"
+        }
+      ],
+      "should_refuse": false,
+      "note": "跨文件：客户端与服务端 starter 在两个文件；题干必须出现 MCP/starter，属固有术语"
+    },
+    {
+      "id": "h21",
+      "type": "factual",
+      "question": "同一个应用里有两套数据源、两个事务管理器，方法上怎么指明用哪一个？",
+      "key_points": [
+        "注解的 value / transactionManager 属性可指定用哪个事务管理器",
+        "取值可以是事务管理器 Bean 的名字，也可以是 @Qualifier 限定值"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/annotations.adoc",
+          "section": "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`"
+        }
+      ],
+      "should_refuse": false,
+      "note": "精确定位题：不写注解名，考语义"
+    },
+    {
+      "id": "h22",
+      "type": "multi-hop",
+      "question": "方法正常返回后、抛异常时，我想分别执行不同的处理逻辑，切面里对应哪几种通知？各自用什么注解？",
+      "key_points": [
+        "正常返回时执行：@AfterReturning",
+        "抛异常退出时执行：@AfterThrowing"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Returning Advice"
+        },
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Throwing Advice"
+        }
+      ],
+      "should_refuse": false,
+      "note": "同类两节对比，考是否能同时召回两种通知"
+    },
+    {
+      "id": "h23",
+      "type": "factual",
+      "question": "要拼一个带路径变量、还可能含中文和空格的链接返给前端，怎么编码才不会出错或被截断？",
+      "key_points": [
+        "UriComponentsBuilder 有两级编码：encode() 先编码模板，展开变量时再严格编码变量",
+        "UriComponents.encode() 是在变量展开之后编码；两者都会把非 ASCII 和非法字符转成转义字节",
+        "选择取决于是否需要保留路径里带保留含义的字符（例如 ;）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-uri-building.adoc",
+          "section": "URI Links > URI Encoding"
+        }
+      ],
+      "should_refuse": false,
+      "note": "口语化题：不出现 UriComponents 术语（答案里才有）"
+    },
+    {
+      "id": "h24",
+      "type": "factual",
+      "question": "并发场景下我想让应用真的监听端口，然后发 HTTP 请求做验证，官方推荐怎么写？",
+      "key_points": [
+        "用 @SpringBootTest(webEnvironment = RANDOM_PORT) 用随机端口起真实服务",
+        "@LocalServerPort 注入实际端口；发请求可自动装配 RestTestClient（配合 @AutoConfigureRestTestClient）"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/testing/spring-boot-applications.adoc",
+          "section": "Testing Spring Boot Applications > Testing With a Running Server"
+        }
+      ],
+      "should_refuse": false,
+      "note": "口语化题：不出现 Testing/Running Server 等标题词"
+    },
+    {
+      "id": "h25",
+      "type": "factual",
+      "question": "Spring AI 支持接入哪些向量数据库？（请只列文档里实际收录的）",
+      "key_points": [
+        "只能列举本节列出的实现（Azure、Apache Cassandra、Chroma、Elasticsearch、GemFire 等）",
+        "不得把训练知识里的其它向量库当成文档内容列举 —— 这是语料边界题"
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > VectorStore Implementations"
+        }
+      ],
+      "should_refuse": false,
+      "note": "语料边界题：考'只依据语料'，列举语料外的库算错"
+    }
+  ]
+}

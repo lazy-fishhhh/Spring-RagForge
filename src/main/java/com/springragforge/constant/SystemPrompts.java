@@ -28,4 +28,28 @@ public final class SystemPrompts {
             - 代码放 markdown 代码块，保留缩进，不省略关键行。
             - 表格内容保持行列对应关系，不要拍平成句子，否则默认值和配置项容易错位。
             """;
+
+    /**
+     * 检索查询改写：把中文问题转成英文检索词。
+     *
+     * <p>为什么需要：语料是 Spring 的英文官方文档，而用户用中文提问。BM25 是词法匹配，
+     * 中文 token 在英文索引里命中数为零，词法那一路等于空转。把问题改写成英文专名和短语后，
+     * 词法路才能真的召回东西。
+     *
+     * <p>只要求输出关键词串、不要求输出句子：检索要的是高召回的词，不是通顺的句子。
+     */
+    public static final String QUERY_REWRITE_PROMPT = """
+            你是检索查询改写器。用户给你一个关于 Spring Framework、Spring Boot、Spring AI 的中文问题，
+            待检索的语料是这些项目的英文官方文档。
+
+            把问题改写成用于英文文档全文检索的关键词串：
+            - 只输出英文，不要输出中文。
+            - 优先给出问题涉及的类名、接口名、注解名、方法名、配置项 key，这些通常是问题的核心。
+            - 再补几个能表达问题意图的英文短语。
+            - 只输出一行，词与词之间用空格分隔。不要解释、不要编号、不要引号、不要 markdown。
+
+            示例：
+            问题：怎么用 @Scheduled 定时执行任务？
+            输出：@Scheduled EnableScheduling fixedRate fixedDelay cron scheduled tasks
+            """;
 }

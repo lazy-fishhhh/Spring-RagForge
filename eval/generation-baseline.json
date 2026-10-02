@@ -1,0 +1,842 @@
+{
+  "runId" : "1790851552265",
+  "config" : "baseline",
+  "started_at" : "2026-10-01T10:48:11.013308100Z",
+  "questions_file" : "eval\\shengcheng.json",
+  "total" : 20,
+  "error_count" : 0,
+  "avg_latency_ms" : 6935,
+  "results" : [ {
+    "id" : "h01",
+    "type" : "factual",
+    "question" : "我想在项目里发起一次模型对话调用，这个入口对象一般怎么拿到？有哪几种创建方式？",
+    "key_points" : [ "通过注入的 ChatClient.Builder 定制后 build()", "也可用 ChatClient.create(chatModel) 这类静态方式直接创建" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/chatclient.adoc",
+      "section" : "Chat Client API > Creating a ChatClient"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "在 Spring AI 中，发起模型对话调用的主要入口对象是 `ChatClient`（推荐）或 `ChatModel`（底层接口）。\n\n### 1. 推荐入口：`ChatClient`\n对于大多数应用程序，**`ChatClient`** 是推荐的入口点。它封装了工具调用循环、内存和可观测性建议等高级功能 [ref:2]。\n\n*   **获取方式**：通常通过 Spring Boot 的自动配置注入。虽然提供的片段未直接展示 Bean 定义代码，但指出它支持“auto-configuration extension points”（自动配置扩展点）[ref:2]。\n*   **调用机制注意**：调用 `ChatClient` 的 `call()` 方法本身**不会**立即触发 AI 模型执行。它仅指示 Spring AI 使用同步还是流式调用。实际的模型调用发生在后续链式调用如 `content()`、`chatResponse()` 或 `responseEntity()` 时 [ref:5]。\n\n### 2. 底层入口：`ChatModel`\n如果你需要更底层的控制，可以使用 **`ChatModel`**。它是与聊天提供商交互的低级请求/响应接口 [ref:2]。\n\n*   **接口定义**：`ChatModel` 继承自通用的 `Model<Prompt, ChatResponse>` 接口 [ref:3]。\n    ```java\n    public interface ChatModel extends Model<Prompt, ChatResponse>, StreamingChatModel {\n        default String call(String message) {...}\n        @Override\n        ChatResponse call(Prompt prompt);\n    }\n    ```\n*   **创建/获取方式**：片段中未提供具体的工厂方法或构造函数示例，但作为 Spring 组件，通常也是通过依赖注入获得。\n*   **工具调用限制**：使用 `ChatModel` 时，如果响应中包含工具调用（Tool Calls），它们**不会**被自动执行，必须由调用者自行处理 [ref:2]。\n\n### 总结\n| 入口对象 | 适用场景 | 关键特性 | 来源 |\n| :--- | :--- | :--- | :--- |\n| `ChatClient` | 大多数应用 | 自动处理工具调用循环、支持 Advisors、推荐入口 | [ref:2] |\n| `ChatModel` | 需要低级控制 | 不自动执行工具调用、直接映射到 `Prompt`/`ChatResponse` | [ref:2][ref:3] |\n\n**文档中没有找到关于如何具体实例化 `ChatClient` 或 `ChatModel` 的代码示例（如 `new ChatClient(...)` 或 `@Bean` 定义）**，仅说明了它们是推荐的入口点和底层接口，并提到了 `ChatClient` 支持自动配置扩展点 [ref:2]。",
+    "cited_sources" : [ {
+      "index" : 2,
+      "origin" : "ChatModel Tool Calling",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/tools/chatmodel-tool-calling.html#chatmodel-tool-calling"
+    }, {
+      "index" : 3,
+      "origin" : "Chat Model API > API Overview > ChatModel",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chatmodel.html"
+    }, {
+      "index" : 5,
+      "origin" : "Chat Client API > call() return values",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chatclient.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Generic Model API > Model",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/generic-model.html"
+    }, {
+      "index" : 2,
+      "origin" : "ChatModel Tool Calling",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/tools/chatmodel-tool-calling.html#chatmodel-tool-calling"
+    }, {
+      "index" : 3,
+      "origin" : "Chat Model API > API Overview > ChatModel",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chatmodel.html"
+    }, {
+      "index" : 4,
+      "origin" : "Generic Model API > ModelRequest",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/generic-model.html"
+    }, {
+      "index" : 5,
+      "origin" : "Chat Client API > call() return values",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chatclient.html"
+    } ],
+    "elapsed_ms" : 10773,
+    "error" : null
+  }, {
+    "id" : "h02",
+    "type" : "factual",
+    "question" : "模型请求前后我想插好几段处理逻辑，这些逻辑之间的先后由什么决定？组成这套机制的关键类是哪些？",
+    "key_points" : [ "非流式：CallAdvisor / CallAdvisorChain；流式：StreamAdvisor / StreamAdvisorChain", "请求与响应对象：ChatClientRequest / ChatClientResponse，可共享 advisor context", "getOrder() 决定链中的执行顺序，值小的先执行" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/advisors.adoc",
+      "section" : "Advisors API > Core Components"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "Advisor 的执行顺序由 `getOrder()` 方法返回的值决定，值越小优先级越高 [ref:2]。这套机制的关键类包括定义执行顺序的 `Ordered` 接口，以及具体实现拦截逻辑的 Advisor（如 `ToolCallingAdvisor`）和负责串联调用的 `CallAdvisorChain` [ref:1][ref:2]。\n\n### 1. 先后顺序的决定因素\nAdvisor 链是一个栈结构，其执行顺序严格遵循以下规则 [ref:2]：\n*   **排序依据**：通过实现 `Ordered` 接口的 `getOrder()` 方法确定。\n*   **优先级逻辑**：\n    *   **Lower order values are executed first**：Order 值越小，越先执行。\n    *   **Request Processing**：Order 值最小的 Advisor 最先处理请求。\n    *   **Response Processing**：Order 值最小的 Advisor 最后处理响应（因为它是栈顶，最后出栈）。\n*   **常量参考**：\n    *   `Ordered.HIGHEST_PRECEDENCE` (`Integer.MIN_VALUE`)：确保在链的最前端执行（请求最先，响应最后）。\n    *   `Ordered.LOWEST_PRECEDENCE` (`Integer.MAX_VALUE`)：确保在链的最后端执行（请求最后，响应最先）。\n*   **冲突处理**如果多个 Advisor 拥有相同的 Order 值，它们的执行顺序是不确定的 [ref:2]。\n\n### 2. 关键类与组件\n根据文档片段，组成该机制的核心类和接口如下：\n\n| 类/接口名 | 作用描述 | 来源 |\n| :--- | :--- | :--- |\n| `Ordered` | Spring 核心接口，定义 `getOrder()` 方法以控制执行优先级。 | [ref:2] |\n| `CallAdvisorChain` | 在 Hook 方法中作为参数出现，代表当前的 Advisor 调用链上下文。 | [ref:1] |\n| `ToolCallingAdvisor` | 一个具体的 Advisor 实现示例，展示了如何通过重写 Hook 方法（如 `doBeforeCall`, `doAfterCall`）来插入处理逻辑。 | [ref:1] |\n| `ChatClientRequest` / `ChatClientResponse` | Advisor 处理的主要数据载体，Hook 方法接收并返回这些对象以修改请求或响应。 | [ref:1] |\n\n### 3. 插入处理逻辑的位置 (Hook Methods)\n如果你想在模型请求前后插入逻辑，可以在继承自 `ToolCallingAdvisor` 或类似结构的 Advisor 中重写以下 Hook 方法 [ref:1]：\n\n```java\n// 在第一次迭代前执行一次，用于设置会话状态\nprotected ChatClientRequest doInitializeLoop(\n        ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain);\n\n// 在每次迭代发送请求给模型之前执行，可注入工具、修改选项或添加上下文\nprotected ChatClientRequest doBeforeCall(\n        ChatClientRequest chatClientRequest, CallAdvisorChain callAdvisorChain);\n\n// 在每次迭代模型响应之后执行，可用于记录观察结果或转换响应\nprotected ChatClientResponse doAfterCall(\n        ChatClientResponse chatClientResponse, CallAdvisorChain callAdvisorChain);\n\n// 在循环结束后执行一次，用于清理状态或附加最终转换\nprotected ChatClientResponse doFinalizeLoop(\n        ChatClientResponse chatClientResponse, CallAdvisorChain callAdvisorChain);\n```\n\n**注意**：`doBeforeCall` 返回的 `ChatClientRequest` 是实际发送给模型的内容；`doAfterCall` 接收的是模型的原始响应，你可以在此处进行转换后再传递给链中的下一个环节 [ref:1]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "ToolCallingAdvisor > Hook Methods > Call-Path Hooks",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/tools/tool-calling-advisor.html#call-hooks"
+    }, {
+      "index" : 2,
+      "origin" : "Advisors API > Core Components > Advisor Order",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/advisors.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "ToolCallingAdvisor > Hook Methods > Call-Path Hooks",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/tools/tool-calling-advisor.html#call-hooks"
+    }, {
+      "index" : 2,
+      "origin" : "Advisors API > Core Components > Advisor Order",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/advisors.html"
+    }, {
+      "index" : 3,
+      "origin" : "Customizing the Nature of a Bean > Lifecycle Callbacks > Combining Lifecycle Mechanisms",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-nature.html#beans-factory-lifecycle-combined-effects"
+    }, {
+      "index" : 4,
+      "origin" : "Generic Model API > Class Diagram",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/generic-model.html"
+    } ],
+    "elapsed_ms" : 11306,
+    "error" : null
+  }, {
+    "id" : "h03",
+    "type" : "factual",
+    "question" : "我只想在某一个来源的文档范围内检索，怎么把搜索范围限制住？",
+    "key_points" : [ "把过滤条件表达式（如 module == 'x'）跟相似度检索请求一起传给 VectorStore", "元数据是写在 Document 上的，检索时按表达式匹配" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/vectordbs.adoc",
+      "section" : "Vector Databases > Metadata Filters"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "在 Spring AI 的向量数据库检索中，可以通过 `SearchRequest` 构建器中的 **`filterExpression`** 参数来限制搜索范围。这允许你基于文档的元数据（metadata）进行过滤，类似于 SQL 中的 `WHERE` 子句 [ref:2]。\n\n具体实现方式有两种：使用字符串表达式或使用 `Filter.Expression` DSL [ref:2]。\n\n### 1. 使用字符串表达式 (External DSL)\n你可以直接传入一个符合 ANTLR4 语法的字符串表达式。例如，只检索 `category` 为 `'AI'` 的文档 [ref:1][ref:3]：\n\n```java\n// 示例：在 Redis Vector Store 中使用 filterExpression 限制范围\nList<Document> results = vectorStore.similaritySearch(\n    SearchRequest.builder()\n        .query(\"AI and machine learning\")\n        .topK(5)\n        .similarityThreshold(0.75)\n        .filterExpression(\"category == 'AI'\") // 限制来源/类别\n        .build()\n);\n```\n\n或者在 Redis 特定的 `searchByRange` 方法中直接使用 [ref:1]：\n```java\nList<Document> rangeResults = vectorStore.searchByRange(\n    \"AI and machine learning\",  \n    0.8,                        \n    \"category == 'AI'\"          // optional filter expression\n);\n```\n\n### 2. 使用 Filter.Expression (Fluent DSL)\n你也可以通过代码构建类型安全的过滤表达式 [ref:2]：\n\n```java\nimport static org.springframework.ai.vectorstore.filter.FilterExpressionBuilder.*;\n\nFilter.Expression filter = new FilterExpressionBuilder()\n    .eq(\"category\", \"AI\")\n    .and()\n    .gte(\"year\", 2020)\n    .build();\n\nSearchRequest request = SearchRequest.builder()\n    .query(\"machine learning\")\n    .filterExpression(filter) // 应用过滤条件\n    .build();\n\nList<Document> results = vectorStore.similaritySearch(request);\n```\n\n### 关键配置项说明\n*   **`filterExpression`**: 接受字符串或 `Filter.Expression` 对象，用于对 `Document` 的 metadata key-value 对进行过滤 [ref:2]。\n*   **支持的操作符**: 片段中展示了 `==` (等于), `>=` (大于等于), `&&` (逻辑与) 等用法 [ref:2]。\n*   **默认行为**: 如果不设置 `filterExpression`，则搜索所有文档 [ref:4]。\n\n注意：具体的可用元数据字段取决于你在插入文档时设置的 `Document` metadata [ref:4]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Redis > Range Search",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 2,
+      "origin" : "Vector Databases > API Overview > SearchRequest Builder",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 3,
+      "origin" : "Redis > Text Search",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 4,
+      "origin" : "Vector Databases > API Overview > SearchRequest Builder",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Redis > Range Search",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 2,
+      "origin" : "Vector Databases > API Overview > SearchRequest Builder",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 3,
+      "origin" : "Redis > Text Search",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 4,
+      "origin" : "Vector Databases > API Overview > SearchRequest Builder",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 5,
+      "origin" : "Vector Databases > Metadata Filters [[metadata-filters]]",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    } ],
+    "elapsed_ms" : 9528,
+    "error" : null
+  }, {
+    "id" : "h04",
+    "type" : "factual",
+    "question" : "一个每次都要新建的对象被注入到长期存在的对象里，我发现拿到的总是同一个旧实例。有什么办法让它每次被调用时都重新创建？",
+    "key_points" : [ "容器可以覆写容器管理 Bean 上的方法，让它返回另一个 Bean 的查找结果（Lookup Method Injection）", "底层用 CGLIB 动态生成子类来覆写该方法", "限制：被覆写的类和方法都不能是 final" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/core/beans/dependencies/factory-method-injection.adoc",
+      "section" : "Method Injection > Lookup Method Injection"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "精确定位题：不写 Prototype/Lookup 术语，靠语义找",
+    "answer" : "这是一个经典的 Spring 作用域问题：当单例 Bean（Singleton）依赖原型 Bean（Prototype）时，容器只在初始化单例 Bean 时注入一次原型 Bean 实例，导致后续调用拿到的都是同一个旧实例 [ref:2]。\n\n要解决这个问题，让每次调用都获取新实例，主要有两种官方推荐方案：**Lookup Method Injection**（查找方法注入）或实现 `ApplicationContextAware` 接口手动获取 Bean [ref:1][ref:5]。\n\n### 方案一：使用 Lookup Method Injection（推荐）\n\n这是处理“单例依赖原型”场景的高级特性。你需要将需要获取新实例的方法声明为 `abstract`，Spring 会在运行时动态生成子类来重写该方法，从而每次调用都返回一个新的原型 Bean 实例 [ref:5]。\n\n**Java 配置示例：**\n\n```java\n// 1. 定义抽象类，包含一个 abstract 的 lookup method\npublic abstract class CommandManager {\n    public Object process(Object commandState) {\n        // grab a new instance of the appropriate Command interface\n        Command command = createCommand();\n        // set the state on the (hopefully brand new) Command instance\n        command.setState(commandState);\n        return command.execute();\n    }\n\n    // okay... but where is the implementation of this method?\n    protected abstract Command createCommand();\n}\n\n// 2. 在 @Configuration 中通过匿名内部类实现该抽象方法\n@Configuration\npublic class AppConfig {\n\n    @Bean\n    @Scope(\"prototype\")\n    public AsyncCommand asyncCommand() {\n        AsyncCommand command = new AsyncCommand();\n        // inject dependencies here as required\n        return command;\n    }\n\n    @Bean\n    public CommandManager commandManager() {\n        // return new anonymous implementation of CommandManager with createCommand()\n        // overridden to return a new prototype Command object\n        return new CommandManager() {\n            protected Command createCommand() {\n                return asyncCommand();\n            }\n        };\n    }\n}\n```\n[ref:5]\n\n### 方案二：实现 ApplicationContextAware\n\n如果你不想使用抽象方法，可以让单例 Bean 感知容器，并在需要时主动调用 `getBean()` 来获取新的原型实例 [ref:1]。\n\n**原理说明：**\n- 单例 Bean A 实现 `ApplicationContextAware` 接口。\n- 在需要用到原型 Bean B 的地方，调用 `applicationContext.getBean(B.class)`。\n- 这样每次调用都会向容器请求一个新实例 [ref:1]。\n\n### 为什么直接注入不行？\n\n因为依赖解析发生在实例化时刻。当你把原型 Bean 注入到单例 Bean 时，容器只创建了一个原型实例并注入给单例，这个实例成为了单例 Bean 中唯一的引用，不会随时间变化而更新 [ref:2]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Method Injection",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/dependencies/factory-method-injection.html#beans-factory-method-injection"
+    }, {
+      "index" : 2,
+      "origin" : "Bean Scopes > Singleton Beans with Prototype-bean Dependencies",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-sing-prot-interaction"
+    }, {
+      "index" : 5,
+      "origin" : "Using the `@Configuration` annotation > Lookup Method Injection",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/java/configuration-annotation.html#beans-java-method-injection"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Method Injection",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/dependencies/factory-method-injection.html#beans-factory-method-injection"
+    }, {
+      "index" : 2,
+      "origin" : "Bean Scopes > Singleton Beans with Prototype-bean Dependencies",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-sing-prot-interaction"
+    }, {
+      "index" : 3,
+      "origin" : "Dependency Injection > Dependency Resolution Process",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/dependencies/factory-collaborators.html#beans-dependency-resolution"
+    }, {
+      "index" : 4,
+      "origin" : "Dependency Injection > Dependency Resolution Process",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/dependencies/factory-collaborators.html#beans-dependency-resolution"
+    }, {
+      "index" : 5,
+      "origin" : "Using the `@Configuration` annotation > Lookup Method Injection",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/java/configuration-annotation.html#beans-java-method-injection"
+    } ],
+    "elapsed_ms" : 10819,
+    "error" : null
+  }, {
+    "id" : "h05",
+    "type" : "factual",
+    "question" : "同一个应用里有两套数据源、两个事务管理器，方法上怎么指明用哪一个？",
+    "key_points" : [ "注解的 value / transactionManager 属性可指定用哪个事务管理器", "取值可以是事务管理器 Bean 的名字，也可以是 @Qualifier 限定值" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/data-access/transaction/declarative/annotations.adoc",
+      "section" : "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "精确定位题：不写注解名，考语义",
+    "answer" : "在 `@Transactional` 注解中，使用 `value` 或 `transactionManager` 属性来指定事务管理器的 Bean 名称或 Qualifier 值 [ref:1]。\n\n### 具体用法\n\n**1. 方法级别指定**\n直接在 `@Transactional` 注解中传入事务管理器的 qualifier 或 bean name：\n\n```java\npublic class TransactionalService {\n\n    @Transactional(\"order\") // 使用 qualifier 为 \"order\" 的事务管理器\n    public void setSomething(String name) { ... }\n\n    @Transactional(\"account\") // 使用 qualifier 为 \"account\" 的事务管理器\n    public void doSomething() { ... }\n}\n```\n[ref:1]\n\n**2. 类级别统一指定（推荐）**\n如果同一个类中的所有事务方法都使用同一个事务管理器，可以在类上声明 `org.springframework.beans.factory.annotation.Qualifier` 注解，从而避免在每个方法上重复标注 [ref:3]：\n\n```java\n@Qualifier(\"order\") // 该类下所有未显式指定 transactionManager 的 @Transactional 方法都将使用此管理器\npublic class OrderService {\n\n    @Transactional // 自动匹配类上的 Qualifier \"order\"\n    public void createOrder() { ... }\n    \n    @Transactional(\"account\") // 显式指定则覆盖类级别的设置\n    public void updateAccount() { ... }\n}\n```\n[ref:3]\n\n### 配置示例\n\n确保你的应用上下文中定义了带有对应 `<qualifier>` 的事务管理器 Bean [ref:1]：\n\n```xml\n<tx:annotation-driven/>\n\n<bean id=\"transactionManager1\" class=\"org.springframework.jdbc.support.JdbcTransactionManager\">\n    <qualifier value=\"order\"/>\n</bean>\n\n<bean id=\"transactionManager2\" class=\"org.springframework.jdbc.support.JdbcTransactionManager\">\n    <qualifier value=\"account\"/>\n</bean>\n```\n[ref:1]\n\n### 注意事项\n*   如果没有找到特定限定符的事务管理器，Spring 会回退到默认名为 `transactionManager` 的 Bean [ref:1]。\n*   请确保使用了与数据源类型匹配的 `PlatformTransactionManager` 实现（例如 JDBC 对应 `JdbcTransactionManager`），否则可能导致事务行为异常 [ref:4]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html#tx-multiple-tx-mgrs-with-attransactional"
+    }, {
+      "index" : 3,
+      "origin" : "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html#tx-multiple-tx-mgrs-with-attransactional"
+    }, {
+      "index" : 4,
+      "origin" : "Solutions to Common Problems > Using the Wrong Transaction Manager for a Specific `DataSource`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/solutions-to-common-problems.html#transaction-solutions-to-common-problems-wrong-ptm"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html#tx-multiple-tx-mgrs-with-attransactional"
+    }, {
+      "index" : 2,
+      "origin" : "Synchronizing Resources with Transactions",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/tx-resource-synchronization.html#tx-resource-synchronization"
+    }, {
+      "index" : 3,
+      "origin" : "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html#tx-multiple-tx-mgrs-with-attransactional"
+    }, {
+      "index" : 4,
+      "origin" : "Solutions to Common Problems > Using the Wrong Transaction Manager for a Specific `DataSource`",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/solutions-to-common-problems.html#transaction-solutions-to-common-problems-wrong-ptm"
+    }, {
+      "index" : 5,
+      "origin" : "Environment Abstraction > Bean Definition Profiles > Using `@Profile`",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/environment.html#beans-definition-profiles-java"
+    } ],
+    "elapsed_ms" : 8349,
+    "error" : null
+  }, {
+    "id" : "h06",
+    "type" : "factual",
+    "question" : "要拼一个带路径变量、还可能含中文和空格的链接返给前端，怎么编码才不会出错或被截断？",
+    "key_points" : [ "UriComponentsBuilder 有两级编码：encode() 先编码模板，展开变量时再严格编码变量", "UriComponents.encode() 是在变量展开之后编码；两者都会把非 ASCII 和非法字符转成转义字节", "选择取决于是否需要保留路径里带保留含义的字符（例如 ;）" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/web/webmvc/mvc-uri-building.adoc",
+      "section" : "URI Links > URI Encoding"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "口语化题：不出现 UriComponents 术语（答案里才有）",
+    "answer" : "使用 `UriComponentsBuilder` 并调用 `encode()` 方法是最稳妥的方式。该选项会先对 URI 模板进行预编码，然后在展开时严格编码 URI 变量，将非 ASCII 字符（如中文）和非法字符替换为转义八位字节，同时也会替换 URI 变量中具有保留含义的字符（如空格、`;` 等），从而避免截断或解析错误 [ref:1]。\n\n对于包含路径变量的场景，推荐直接使用 `build(...)` 方法，它隐含了编码操作 [ref:1]。如果是在 Spring MVC 中生成指向 Controller 方法的链接，可以使用 `MvcUriComponentsBuilder` 并在最后调用 `.encode().toUri()` [ref:2]。\n\n### 具体做法与示例\n\n#### 1. 通用场景：使用 `UriComponentsBuilder`\n如果你需要手动拼接带路径变量且含特殊字符（中文、空格）的 URL，请使用 `encode()` 配合 `buildAndExpand` 或直接使用 `build`。\n\n**Java 示例：**\n```java\n// 方式一：显式调用 encode()\nURI uri = UriComponentsBuilder.fromPath(\"/hotel list/{city}\")\n        .queryParam(\"q\", \"{q}\")\n        .encode() // 关键步骤：严格编码 URI 变量中的保留字符和非 ASCII 字符\n        .buildAndExpand(\"New York\", \"foo+bar\")\n        .toUri();\n\n// 结果: \"/hotel%20list/New%20York?q=foo%2Bbar\"\n```\n\n```java\n// 方式二：简写，直接 build 隐含编码\nURI uri = UriComponentsBuilder.fromPath(\"/hotel list/{city}\")\n        .queryParam(\"q\", \"{q}\")\n        .build(\"New York\", \"foo+bar\");\n```\n\n**Kotlin 示例：**\n```kotlin\nval uri = UriComponentsBuilder.fromPath(\"/hotel list/{city}\")\n        .queryParam(\"q\", \"{q}\")\n        .encode()\n        .buildAndExpand(\"New York\", \"foo+bar\")\n        .toUri()\n```\n\n*注意：`encode()` 会将路径变量中的空格编码为 `%20`，将 `+` 编码为 `%2B`，并将中文等非 ASCII 字符转换为 UTF-8 百分号编码形式 [ref:1]。*\n\n#### 2. Spring MVC 场景：生成 Controller 链接\n如果在后端代码中需要根据 Controller 方法生成链接返回给前端，使用 `MvcUriComponentsBuilder`。\n\n**Java 示例：**\n```java\n// 假设有一个 Controller 方法 getBooking(Long booking) 映射到 /hotels/{hotel}/bookings/{booking}\nUriComponents uriComponents = MvcUriComponentsBuilder\n    .fromMethodName(BookingController.class, \"getBooking\", 21)\n    .buildAndExpand(42);\n\n// 必须调用 encode() 以确保生成的 URI 正确编码\nURI uri = uriComponents.encode().toUri();\n```\n\n**Kotlin 示例：**\n```kotlin\nval uriComponents = MvcUriComponentsBuilder\n    .fromMethodName(BookingController::class.java, \"getBooking\", 21)\n    .buildAndExpand(42)\n\nval uri = uriComponents.encode().toUri()\n```\n\n### 为什么这样能防止出错？\n\n1.  **处理保留字符**：文档指出，`UriComponentsBuilder#encode()` 不仅替换非 ASCII 字符，还会替换 URI 变量中具有保留含义的字符。例如，分号 `;` 在路径中是合法的，但在 URI 变量中可能被解释为矩阵变量分隔符。`encode()` 会将变量中的 `;` 编码为 `%3B`，防止被误解析 [ref:1]。\n2.  **处理空格和中文**：空格和中文属于非 ASCII 或非法字符，`encode()` 会将它们转换为标准的百分号编码（Percent-Encoding），确保它们在 HTTP 传输中不会被截断或破坏结构 [ref:1]。\n3.  **避免解码歧义**：Servlet 容器可能会自动解码请求路径，如果未正确编码，包含 `/` 或 `;` 的路径变量可能导致路径结构改变或安全问题。通过 `encode()` 预先编码，可以确保这些字符作为数据而非结构传递 [ref:3]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "URI Links > URI Encoding",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#uri-encoding"
+    }, {
+      "index" : 2,
+      "origin" : "URI Links > Links to Controllers",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#mvc-links-to-controllers"
+    }, {
+      "index" : 3,
+      "origin" : "Path Matching",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/handlermapping-path.html#mvc-handlermapping-path"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "URI Links > URI Encoding",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#uri-encoding"
+    }, {
+      "index" : 2,
+      "origin" : "URI Links > Links to Controllers",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#mvc-links-to-controllers"
+    }, {
+      "index" : 3,
+      "origin" : "Path Matching",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-servlet/handlermapping-path.html#mvc-handlermapping-path"
+    }, {
+      "index" : 4,
+      "origin" : "Matrix Variables",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/matrix-variables.html#mvc-ann-matrix-variables"
+    }, {
+      "index" : 5,
+      "origin" : "URI Links > Links in Views",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#mvc-links-to-controllers-from-views"
+    } ],
+    "elapsed_ms" : 15120,
+    "error" : null
+  }, {
+    "id" : "h07",
+    "type" : "factual",
+    "question" : "并发场景下我想让应用真的监听端口，然后发 HTTP 请求做验证，官方推荐怎么写？",
+    "key_points" : [ "用 @SpringBootTest(webEnvironment = RANDOM_PORT) 用随机端口起真实服务", "@LocalServerPort 注入实际端口；发请求可自动装配 RestTestClient（配合 @AutoConfigureRestTestClient）" ],
+    "gold_source" : [ {
+      "file" : "spring-boot/reference/pages/testing/spring-boot-applications.adoc",
+      "section" : "Testing Spring Boot Applications > Testing With a Running Server"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "口语化题：不出现 Testing/Running Server 等标题词",
+    "answer" : "文档中没有找到关于“在并发场景下监听端口并发送 HTTP 请求做验证”的官方推荐写法。\n\n提供的片段主要涉及以下内容，但未包含具体的测试实现代码或并发验证策略：\n1. **Spring Boot 应用事件的生命周期**：包括 `ApplicationStartedEvent`、`ApplicationReadyEvent` 和 `WebServerInitializedEvent` 等事件的触发顺序 [ref:1][ref:2]。\n2. **事件监听器的注册方式**：如通过 `META-INF/spring.factories` 或 `SpringApplication.addListeners(...)` [ref:1]。\n3. **事件处理的线程模型**：指出默认情况下事件监听器是同步执行的，且不建议在监听器中运行耗时任务，建议改用 Application/Command Line Runners [ref:2][ref:3]。\n\n若要实现该需求，通常缺失的关键信息包括：\n- 如何在集成测试中启动应用并获取实际绑定的随机端口（例如使用 `@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)`）。\n- 如何注入 `TestRestTemplate` 或 `WebClient` 来发送 HTTP 请求。\n- 如何处理并发请求以验证线程安全性（这属于测试框架如 JUnit 5 或 Testcontainers 的使用范畴，而非 Spring Framework/Boot 核心配置）。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "SpringApplication > Application Events and Listeners",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/spring-application.html#features.spring-application.application-events-and-listeners"
+    }, {
+      "index" : 2,
+      "origin" : "SpringApplication > Application Events and Listeners",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/spring-application.html#features.spring-application.application-events-and-listeners"
+    }, {
+      "index" : 3,
+      "origin" : "Additional Capabilities of the `ApplicationContext` > Standard and Custom Events",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/context-introduction.html#context-functionality-events"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "SpringApplication > Application Events and Listeners",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/spring-application.html#features.spring-application.application-events-and-listeners"
+    }, {
+      "index" : 2,
+      "origin" : "SpringApplication > Application Events and Listeners",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/spring-application.html#features.spring-application.application-events-and-listeners"
+    }, {
+      "index" : 3,
+      "origin" : "Additional Capabilities of the `ApplicationContext` > Standard and Custom Events",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/context-introduction.html#context-functionality-events"
+    } ],
+    "elapsed_ms" : 6297,
+    "error" : null
+  }, {
+    "id" : "h08",
+    "type" : "factual",
+    "question" : "Spring AI 支持接入哪些向量数据库？（请只列文档里实际收录的）",
+    "key_points" : [ "只能列举本节列出的实现（Azure、Apache Cassandra、Chroma、Elasticsearch、GemFire 等）", "不得把训练知识里的其它向量库当成文档内容列举 —— 这是语料边界题" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/vectordbs.adoc",
+      "section" : "Vector Databases > VectorStore Implementations"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "语料边界题：考'只依据语料'，列举语料外的库算错",
+    "answer" : "Spring AI 官方文档中列出的 `VectorStore` 实现包括以下向量数据库：\n\n*   Azure Vector Search [ref:3]\n*   Apache Cassandra [ref:3]\n*   Chroma Vector Store [ref:3]\n*   Elasticsearch Vector Store [ref:3]\n*   GemFire Vector Store [ref:3]\n*   MariaDB Vector Store [ref:3]\n*   Milvus Vector Store [ref:3]\n*   MongoDB Atlas Vector Store [ref:3]\n*   Neo4j Vector Store [ref:3]\n*   OpenSearch Vector Store [ref:3]\n*   Oracle Vector Store [ref:3]\n*   PgVector Store (PostgreSQL/PGVector) [ref:3]\n*   Pinecone Vector Store [ref:3]\n*   Qdrant Vector Store [ref:3]\n*   Redis Vector Store [ref:3]\n*   Typesense Vector Store [ref:3]\n*   Weaviate Vector Store [ref:3]\n*   S3 Vector Store (AWS S3) [ref:3]\n*   SimpleVectorStore (仅用于测试，非生产环境) [ref:3]\n\n此外，Azure Cosmos DB vector store 支持作为由 Azure Cosmos DB 团队维护的外部模块提供 [ref:3]。",
+    "cited_sources" : [ {
+      "index" : 3,
+      "origin" : "Vector Databases > VectorStore Implementations",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Vector Databases > VectorStore Implementations",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 2,
+      "origin" : "Vector Databases > API Overview",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html#api-overview"
+    }, {
+      "index" : 3,
+      "origin" : "Vector Databases > VectorStore Implementations",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 4,
+      "origin" : "Getting Started > Spring Initializr",
+      "url" : "https://docs.spring.io/spring-ai/reference/getting-started.html#spring-initializr"
+    }, {
+      "index" : 5,
+      "origin" : "Retrieval Augmented Generation > Advisors",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html"
+    } ],
+    "elapsed_ms" : 4666,
+    "error" : null
+  }, {
+    "id" : "h09",
+    "type" : "multi-hop",
+    "question" : "我要把文档灌进向量存储，建表和向量长度（维度）这块怎么处理才不用手工建？",
+    "key_points" : [ "pgvector 自动配置里可开启 schema 初始化", "维度必须与所用 embedding 模型输出维度一致", "该配置项同时影响建表与后续插入/检索" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/vectordbs/pgvector.adoc",
+      "section" : "PGvector > Auto-Configuration"
+    }, {
+      "file" : "spring-ai/api/vectordbs.adoc",
+      "section" : "Vector Databases > Schema Initialization"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "要实现“不用手工建表”且自动处理向量维度，核心在于启用 `PgVectorStore` 的 **Schema Initialization** 功能。\n\n### 1. 启用自动建表\n在配置 `PgVectorStore` Bean 时，将 `.initializeSchema(true)` 设置为 `true`。启动时，`PgVectorStore` 会自动安装所需的数据库扩展（`vector`, `hstore`, `uuid-ossp`），创建 `vector_store` 表并建立索引 [ref:1][ref:2]。\n\n```java\n@Bean\npublic VectorStore vectorStore(JdbcTemplate jdbcTemplate, EmbeddingModel embeddingModel) {\n    return PgVectorStore.builder(jdbcTemplate, embeddingModel)\n        .dimensions(1536)                    // Optional: defaults to model dimensions or 1536\n        .distanceType(COSINE_DISTANCE)       // Optional: defaults to COSINE_DISTANCE\n        .indexType(HNSW)                     // Optional: defaults to HNSW\n        .initializeSchema(true)              // 关键：设为 true 以自动建表和索引\n        .schemaName(\"public\")                // Optional: defaults to \"public\"\n        .vectorTableName(\"vector_store\")     // Optional: defaults to \"vector_store\"\n        .maxDocumentBatchSize(10000)         // Optional: defaults to 10000\n        .build();\n}\n```\n[ref:2]\n\n### 2. 向量维度（Dimensions）的处理\n*   **默认行为**：如果不显式设置 `.dimensions()`，它默认使用嵌入模型（Embedding Model）的维度，或者默认为 `1536` [ref:2]。\n*   **手动指定**：如果你使用的模型维度不是默认的 1536，必须在 Builder 中通过 `.dimensions(你的实际维度)` 明确指定 [ref:2]。\n*   **注意限制**：PGvector 的 HNSW 索引最多支持 2000 个维度 [ref:1]。\n\n### 3. 灌入文档数据\n建表完成后，使用 `VectorStore.add(documents)` 方法即可自动计算嵌入向量并存入数据库，无需手动处理向量生成 [ref:4]。\n\n```java\n@Autowired\nVectorStore vectorStore;\n\nvoid load(String sourceFile) {\n    JsonReader jsonReader = new JsonReader(new FileSystemResource(sourceFile),\n            \"price\", \"name\", \"shortDescription\", \"description\", \"tags\");\n    List<Document> documents = jsonReader.get();\n    this.vectorStore.add(documents); // 自动计算 embedding 并存储\n}\n```\n[ref:4]",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "PGvector > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html"
+    }, {
+      "index" : 2,
+      "origin" : "PGvector > Manual Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html"
+    }, {
+      "index" : 4,
+      "origin" : "Vector Databases > Example Usage > Writing to a Vector Store",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "PGvector > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html"
+    }, {
+      "index" : 2,
+      "origin" : "PGvector > Manual Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html"
+    }, {
+      "index" : 3,
+      "origin" : "PGvector",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/pgvector.html"
+    }, {
+      "index" : 4,
+      "origin" : "Vector Databases > Example Usage > Writing to a Vector Store",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html"
+    }, {
+      "index" : 5,
+      "origin" : "Vector Databases > Example Usage > Writing User-Supplied Embeddings",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs.html#writing-precomputed-embeddings"
+    } ],
+    "elapsed_ms" : 7827,
+    "error" : null
+  }, {
+    "id" : "h10",
+    "type" : "multi-hop",
+    "question" : "框架给了两个不同阶段的扩展点：一个能在对象还没创建时就改配置元数据，一个能在实例化之后把对象包一层。它们分别在什么时候起作用？",
+    "key_points" : [ "BeanFactoryPostProcessor 在 Bean 定义阶段：可读取并修改配置元数据（bean definitions）", "BeanPostProcessor 在实例化之后：可以包装/代理实例，影响初始化前后行为", "典型应用：AOP 代理、注解处理、属性注入增强" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/core/beans/factory-extension.adoc",
+      "section" : "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+    }, {
+      "file" : "spring-framework/core/beans/factory-extension.adoc",
+      "section" : "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "这两个扩展点分别是 `BeanFactoryPostProcessor` 和 `BeanPostProcessor`，它们的作用时机如下：\n\n1.  **`BeanFactoryPostProcessor`**：在容器实例化任何 Bean（除了 `BeanFactoryPostProcessor` 自身）**之前**起作用。它操作的是 Bean 的配置元数据（configuration metadata），允许读取并修改这些定义 [ref:1]。\n2.  **`BeanPostProcessor`**：在 Bean **实例化之后**起作用。如果你需要改变实际的 Bean 实例（即从配置元数据创建出来的对象），需要使用 `BeanPostProcessor` [ref:1]。\n\n**关键区别与注意事项：**\n\n*   **操作对象不同**：`BeanFactoryPostProcessor` 修改的是“蓝图”（Bean Definition/Metadata），而 `BeanPostProcessor` 处理的是“成品”（Bean Instance）[ref:1]。\n*   **生命周期影响**：虽然在 `BeanFactoryPostProcessor` 中技术上可以通过 `BeanFactory.getBean()` 访问实例，但这会导致 Bean 提前实例化，违反标准容器生命周期，并可能绕过后续的 Bean 后处理步骤，因此不建议这样做 [ref:1]。\n*   **执行顺序**：多个 `BeanFactoryPostProcessor` 的执行顺序可以通过实现 `Ordered` 接口来控制 [ref:1]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-extension.html#beans-factory-extension-factory-postprocessors"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-extension.html#beans-factory-extension-factory-postprocessors"
+    }, {
+      "index" : 2,
+      "origin" : "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor` > Example: The `PropertyOverrideConfigurer`",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/factory-extension.html#beans-factory-overrideconfigurer"
+    }, {
+      "index" : 3,
+      "origin" : "Dependency Injection > Dependency Resolution Process",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/dependencies/factory-collaborators.html#beans-dependency-resolution"
+    } ],
+    "elapsed_ms" : 5800,
+    "error" : null
+  }, {
+    "id" : "h11",
+    "type" : "multi-hop",
+    "question" : "浏览器跨域请求被拦、反向代理之后拿到的协议和域名不对，框架内置了哪两个组件分别处理这两件事？",
+    "key_points" : [ "CORS：跨域请求的预检与响应头处理", "Forwarded Headers：在反向代理后正确还原原始请求的 host/协议/端口" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/web/webmvc/filters.adoc",
+      "section" : "Filters > CORS"
+    }, {
+      "file" : "spring-framework/web/webmvc/filters.adoc",
+      "section" : "Filters > Forwarded Headers"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "去标题化改写；gold 与原题完全相同（对比两组分数差 = 泄题造成的虚高）",
+    "answer" : "文档中没有找到关于“浏览器跨域请求被拦”的组件说明。\n\n对于“反向代理之后拿到的协议和域名不对”的问题，框架内置了 **Forwarded Headers** 处理机制（支持 `Forwarded` 和 `X-Forwarded-` 两种头部格式）来恢复原始客户端的请求信息 [ref:1]。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Filters > Forwarded Headers",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/filters.html#filters-forwarded-headers"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Filters > Forwarded Headers",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/filters.html#filters-forwarded-headers"
+    }, {
+      "index" : 2,
+      "origin" : "URI Links > URI Parsing",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-uri-building.html#uri-parsing"
+    } ],
+    "elapsed_ms" : 1753,
+    "error" : null
+  }, {
+    "id" : "h12",
+    "type" : "multi-hop",
+    "question" : "我想在本地跑一个开源模型，前置准备有哪些？可调的运行参数放在哪个类里？",
+    "key_points" : [ "前置：本地安装 Ollama，或用 Testcontainers 方式运行；并把要用的模型拉下来", "运行参数由 OllamaChatOptions 提供（模型、temperature、思考模式等）；旧的 OllamaOptions 已废弃" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/chat/ollama-chat.adoc",
+      "section" : "Ollama Chat > Prerequisites"
+    }, {
+      "file" : "spring-ai/api/chat/ollama-chat.adoc",
+      "section" : "Ollama Chat > Runtime Options"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "跨小节：答案分落在两节",
+    "answer" : "在本地运行开源模型（以 Ollama 为例），前置准备包括安装 Ollama 实例并拉取所需模型 [ref:1][ref:3]。\n\n**前置准备步骤：**\n\n1.  **获取 Ollama 实例**：\n    *   下载并在本地机器上安装 Ollama [ref:1][ref:3]。\n    *   或者通过 Testcontainers 配置并运行 Ollama [ref:1][ref:3]。\n\n2.  **拉取模型**：\n    *   从 Ollama 模型库拉取指定名称的模型：\n        ```shellscript\n        ollama pull <model-name>\n        ```\n        [ref:1][ref:3]\n    *   也可以从 Hugging Face 拉取 GGUF 格式的模型：\n        ```shellscript\n        ollama pull hf.co/<username>/<model-repository>\n        ```\n        [ref:1][ref:3]\n    *   或者启用自动拉取选项，以便应用自动下载所需的模型 [ref:1][ref:3]。\n\n关于“可调的运行参数放在哪个类里”，提供的文档片段中**没有找到相关内容**。片段 [ref:2] 提到了 OpenAI Chat 的属性前缀 `spring.ai.openai.chat` 以及可以在运行时通过添加 request-specific options 到 `Prompt` 调用来覆盖属性，但并未明确指出具体的 Java 类名（如 `OllamaChatOptions` 或类似类）。片段 [ref:1] 和 [ref:3] 仅涉及 Prerequisites（前置条件），未包含配置类的信息。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Ollama Chat > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html"
+    }, {
+      "index" : 2,
+      "origin" : "OpenAI Chat > Auto-configuration > Chat Properties",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chat/openai-chat.html"
+    }, {
+      "index" : 3,
+      "origin" : "Ollama Embeddings > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/embeddings/ollama-embeddings.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Ollama Chat > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html"
+    }, {
+      "index" : 2,
+      "origin" : "OpenAI Chat > Auto-configuration > Chat Properties",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/chat/openai-chat.html"
+    }, {
+      "index" : 3,
+      "origin" : "Ollama Embeddings > Prerequisites",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/embeddings/ollama-embeddings.html"
+    } ],
+    "elapsed_ms" : 5346,
+    "error" : null
+  }, {
+    "id" : "h13",
+    "type" : "multi-hop",
+    "question" : "MCP 的客户端和服务端分别要引哪个 starter？服务端协议怎么指定？",
+    "key_points" : [ "客户端：spring-ai-starter-mcp-client（支持 STDIO / SSE / Streamable-HTTP 等传输）", "服务端：spring-ai-starter-mcp-server，用 spring.ai.mcp.server.protocol 指定协议/传输" ],
+    "gold_source" : [ {
+      "file" : "spring-ai/api/mcp/mcp-client-boot-starter-docs.adoc",
+      "section" : "MCP Client Boot Starter > Starters"
+    }, {
+      "file" : "spring-ai/api/mcp/mcp-server-boot-starter-docs.adoc",
+      "section" : "MCP Server Boot Starter > MCP Server Boot Starters"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "跨文件：客户端与服务端 starter 在两个文件；题干必须出现 MCP/starter，属固有术语",
+    "answer" : "**结论：**\n*   **客户端 Starter**：标准场景使用 `spring-ai-starter-mcp-client`；生产环境或响应式应用推荐使用 WebFlux 版本的 `spring-ai-starter-mcp-client-webflux` [ref:1]。\n*   **服务端 Starter**：根据传输协议选择，STDIO 使用 `spring-ai-starter-mcp-server`；WebMVC 使用 `spring-ai-starter-mcp-server-webmvc`；WebFlux 使用 `spring-ai-starter-mcp-server-webflux` [ref:2]。\n*   **服务端协议指定**：通过配置属性 `spring.ai.mcp.server.protocol` 指定，可选值为 `SSE`、`STREAMABLE` 或 `STATELESS`（STDIO 模式则通过 `spring.ai.mcp.server.stdio=true` 启用）[ref:2]。\n\n### 1. 客户端 Starter 选择\n\n| 场景 | Artifact ID | 说明 |\n| :--- | :--- | :--- |\n| **标准客户端** | `spring-ai-starter-mcp-client` | 支持 STDIO, SSE, Streamable-HTTP 等传输。SSE/Streamable-Http 基于 JDK HttpClient。[ref:1] |\n| **WebFlux 客户端** | `spring-ai-starter-mcp-client-webflux` | 功能类似标准版，但使用 WebFlux-based 实现。**推荐用于生产部署**。[ref:1] |\n\n### 2. 服务端 Starter 与协议配置\n\n服务端需根据选择的传输机制引入对应的 Starter，并通过 `spring.ai.mcp.server.protocol` 属性指定具体协议。\n\n#### STDIO 模式\n*   **Starter**: `spring-ai-starter-mcp-server`\n*   **配置**: 设置 `spring.ai.mcp.server.stdio=true` [ref:2]\n\n#### WebMVC 模式\n*   **Starter**: `spring-ai-starter-mcp-server-webmvc`\n*   **协议配置 (`spring.ai.mcp.server.protocol`)**:\n    *   `SSE`: *(自 2.0.0 起已弃用，建议使用 STREAMABLE)* [ref:2]\n    *   `STREAMABLE`: Streamable-HTTP WebMVC [ref:2]\n    *   `STATELESS`: Stateless WebMVC [ref:2]\n\n#### WebFlux (Reactive) 模式\n*   **Starter**: `spring-ai-starter-mcp-server-webflux`\n*   **协议配置 (`spring.ai.mcp.server.protocol`)**:\n    *   `SSE`: *(自 2.0.0 起已弃用，建议使用 STREAMABLE)* [ref:2]\n    *   `STREAMABLE`: Streamable-HTTP WebFlux [ref:2]\n    *   `STATELESS`: Stateless WebFlux [ref:2]\n\n### 3. 客户端配置示例\n\n在 `application.yml` 中配置客户端连接时，需注意 `type` 属性决定是同步还是异步客户端（不能混用），且不同传输方式有各自的连接配置块 [ref:4]：\n\n```yaml\nspring:\n  ai:\n    mcp:\n      client:\n        enabled: true\n        name: my-mcp-client\n        version: 1.0.0\n        request-timeout: 30s\n        type: SYNC  # 或 ASYNC (用于响应式应用)\n        sse:\n          connections:\n            server1:\n              url: http://localhost:8080\n        streamable-http:\n          connections:\n            server3:\n              url: http://localhost:8083\n              endpoint: /mcp\n        stdio:\n          connections:\n            server1:\n              command: /path/to/server\n              args:\n                - --port=8080\n```",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "MCP Client Boot Starter > Starters",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    }, {
+      "index" : 2,
+      "origin" : "MCP Server Boot Starter > MCP Server Boot Starters",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html"
+    }, {
+      "index" : 4,
+      "origin" : "MCP Client Boot Starter > Usage Example",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "MCP Client Boot Starter > Starters",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    }, {
+      "index" : 2,
+      "origin" : "MCP Server Boot Starter > MCP Server Boot Starters",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html"
+    }, {
+      "index" : 3,
+      "origin" : "Getting Started with Model Context Protocol (MCP) > Reference Documentation",
+      "url" : "https://docs.spring.io/spring-ai/reference/guides/getting-started-mcp.html"
+    }, {
+      "index" : 4,
+      "origin" : "MCP Client Boot Starter > Usage Example",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    }, {
+      "index" : 5,
+      "origin" : "Model Context Protocol (MCP) > MCP Java SDK Architecture > Client/Server Layer (Top)",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html"
+    } ],
+    "elapsed_ms" : 11488,
+    "error" : null
+  }, {
+    "id" : "h14",
+    "type" : "multi-hop",
+    "question" : "方法正常返回后、抛异常时，我想分别执行不同的处理逻辑，切面里对应哪几种通知？各自用什么注解？",
+    "key_points" : [ "正常返回时执行：@AfterReturning", "抛异常退出时执行：@AfterThrowing" ],
+    "gold_source" : [ {
+      "file" : "spring-framework/core/aop/ataspectj/advice.adoc",
+      "section" : "Declaring Advice > After Returning Advice"
+    }, {
+      "file" : "spring-framework/core/aop/ataspectj/advice.adoc",
+      "section" : "Declaring Advice > After Throwing Advice"
+    } ],
+    "should_refuse" : false,
+    "refuse_scope" : null,
+    "note" : "同类两节对比，考是否能同时召回两种通知",
+    "answer" : "针对“方法正常返回”和“抛异常时分别执行不同逻辑”的需求，切面中对应以下两种通知：\n\n1.  **After Returning Advice（返回后通知）**\n    *   **触发时机**：当匹配的方法执行**正常返回**时运行 [ref:1]。\n    *   **注解**：`@AfterReturning` [ref:1]。\n    *   **注意**：它仅适用于成功的正常返回，不适用于抛出异常的情况 [ref:4]。\n\n2.  **After Throwing Advice（抛出异常后通知）**\n    *   **触发时机**：当匹配的方法执行因**抛出异常**而退出时运行 [ref:2]。\n    *   **注解**：`@AfterThrowing` [ref:2]。\n    *   **注意**：该通知只接收来自连接点（目标方法）本身的异常，不接收来自 `@After` 或 `@AfterReturning` 方法的异常 [ref:2]。\n\n### 代码示例\n\n**正常返回时的处理 (`@AfterReturning`)：**\n\n```java\nimport org.aspectj.lang.annotation.Aspect;\nimport org.aspectj.lang.annotation.AfterReturning;\n\n@Aspect\npublic class AfterReturningExample {\n\n    @AfterReturning(\"execution(* com.xyz.dao.*.*(..))\")\n    public void doAccessCheck() {\n        // 正常返回后的逻辑\n    }\n}\n```\n[ref:1]\n\n**抛异常时的处理 (`@AfterThrowing`)：**\n\n```java\nimport org.aspectj.lang.annotation.Aspect;\nimport org.aspectj.lang.annotation.AfterThrowing;\n\n@Aspect\npublic class AfterThrowingExample {\n\n    @AfterThrowing(\"execution(* com.xyz.dao.*.*(..))\")\n    public void doRecoveryActions() {\n        // 抛异常后的逻辑\n    }\n}\n```\n[ref:2]\n\n### 补充说明\n如果你需要在**无论正常返回还是抛异常**都执行相同的清理逻辑（如释放资源），可以使用 `@After` (After Finally Advice)，它在方法执行退出时总是运行 [ref:4]。但根据你的需求是“分别执行不同的处理逻辑”，因此应组合使用 `@AfterReturning` 和 `@AfterThrowing`。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Declaring Advice > After Returning Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-returning"
+    }, {
+      "index" : 2,
+      "origin" : "Declaring Advice > After Throwing Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-throwing"
+    }, {
+      "index" : 4,
+      "origin" : "Declaring Advice > After (Finally) Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-finally"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Declaring Advice > After Returning Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-returning"
+    }, {
+      "index" : 2,
+      "origin" : "Declaring Advice > After Throwing Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-throwing"
+    }, {
+      "index" : 3,
+      "origin" : "Asynchronous Requests > Processing > Exception Handling",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-exceptions"
+    }, {
+      "index" : 4,
+      "origin" : "Declaring Advice > After (Finally) Advice",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/aop/ataspectj/advice.html#aop-advice-after-finally"
+    }, {
+      "index" : 5,
+      "origin" : "Exceptions",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-exceptionhandler.html#mvc-ann-exceptionhandler"
+    } ],
+    "elapsed_ms" : 7960,
+    "error" : null
+  }, {
+    "id" : "r01",
+    "type" : "refuse",
+    "question" : "Kafka 的 SASL/PLAIN 认证怎么配置？",
+    "key_points" : [ "应明确拒答：语料是 Spring Framework/Boot/AI 官方文档，不含 Kafka 配置" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "out-of-domain",
+    "note" : null,
+    "answer" : "文档中没有找到相关内容。\n\n提供的文档片段主要涉及 Spring Boot 的自动配置（Auto-configuration）、自定义 Starter 的配置键规范、嵌入式 Servlet 容器的定制以及 `@Value` 注解的使用，均未包含 Kafka SASL/PLAIN 认证的具体配置说明。",
+    "cited_sources" : [ ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Creating Your Own Auto-configuration > Creating Your Own Starter > Configuration keys",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/developing-auto-configuration.html#features.developing-auto-configuration.custom-starter.configuration-keys"
+    }, {
+      "index" : 2,
+      "origin" : "Servlet Web Applications > Embedded Servlet Container Support > Customizing Embedded Servlet Containers",
+      "url" : "https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.embedded-container.customizing"
+    }, {
+      "index" : 3,
+      "origin" : "Auto-configuration",
+      "url" : "https://docs.spring.io/spring-boot/reference/using/auto-configuration.html#using.auto-configuration"
+    }, {
+      "index" : 4,
+      "origin" : "Using `@Value`",
+      "url" : "https://docs.spring.io/spring-framework/reference/core/beans/annotation-config/value-annotations.html#beans-value-annotations"
+    } ],
+    "elapsed_ms" : 2183,
+    "error" : null
+  }, {
+    "id" : "r02",
+    "type" : "refuse",
+    "question" : "Nacos 集群怎么部署、配置怎么持久化到 MySQL？",
+    "key_points" : [ "应明确拒答：语料不含 Nacos" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "out-of-domain",
+    "note" : null,
+    "answer" : "文档中没有找到相关内容。\n\n提供的片段中仅包含 Spring Cloud Alibaba 的依赖管理、配置属性（如 `spring.cloud.nacos.config.*`）以及如何使用 Nacos Config/Discovery 客户端的代码示例，**缺少**关于 Nacos Server 集群部署架构、MySQL 持久化配置（如 `application.properties` 中的数据库连接设置）或运维层面的相关说明。",
+    "cited_sources" : [ ],
+    "retrieved_sources" : [ ],
+    "elapsed_ms" : 2192,
+    "error" : null
+  }, {
+    "id" : "r03",
+    "type" : "refuse",
+    "question" : "Vue 3 里怎么用 EventSource 接收后端的 SSE 流？",
+    "key_points" : [ "应明确拒答：语料不含前端内容" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "out-of-domain",
+    "note" : null,
+    "answer" : "文档中没有找到相关内容。\n\n提供的片段仅包含 Spring Framework 后端使用 `SseEmitter` 生成 SSE 流的说明 [ref:1]，以及 Spring AI MCP Client 配置 SSE 传输的属性 [ref:2]。缺少 Vue 3 前端如何使用 `EventSource` API 接收和处理这些流的具体代码示例或指导。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Asynchronous Requests > HTTP Streaming > SSE",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-sse"
+    }, {
+      "index" : 2,
+      "origin" : "MCP Client Boot Starter > Configuration Properties > SSE Transport Properties",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Asynchronous Requests > HTTP Streaming > SSE",
+      "url" : "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-async.html#mvc-ann-async-sse"
+    }, {
+      "index" : 2,
+      "origin" : "MCP Client Boot Starter > Configuration Properties > SSE Transport Properties",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-client-boot-starter-docs.html"
+    } ],
+    "elapsed_ms" : 2023,
+    "error" : null
+  }, {
+    "id" : "r04",
+    "type" : "refuse",
+    "question" : "怎么用 Logstash 收集 Spring Boot 的日志到 Elasticsearch？",
+    "key_points" : [ "应明确拒答：语料不含 Logstash/ELK 采集链路" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "out-of-domain",
+    "note" : null,
+    "answer" : "Spring Boot 原生支持输出 Logstash JSON 格式的日志，只需配置 `logging.structured.format` 属性即可 [ref:1][ref:4]。\n\n### 1. 启用 Logstash JSON 格式\n在 `application.yaml` 或 `application.properties` 中设置以下属性，使控制台或文件输出为 Logstash 兼容的 JSON 格式 [ref:4]：\n\n```yaml\nlogging:\n  structured:\n    format:\n      console: logstash\n      file: logstash\n```\n\n启用后，日志行将呈现如下 JSON 结构 [ref:4]：\n```json\n{\"@timestamp\":\"2024-01-01T10:15:00.111037681+02:00\",\"@version\":\"1\",\"message\":\"No active profile set, falling back to 1 default profile: \\\"default\\\"\",\"logger_name\":\"org.example.Application\",\"thread_name\":\"main\",\"level\":\"INFO\",\"level_value\":20000}\n```\n\n### 2. 自定义日志配置时的注意事项\n如果你使用了自定义的日志配置文件（如 `logback-spring.xml`），需要确保配置尊重 `CONSOLE_LOG_STRUCTURED_FORMAT` 和 `FILE_LOG_STRUCTURED_FORMAT` 系统属性 [ref:1]。\n\n**Logback 示例：**\n替换原有的 encoder 为 `StructuredLogEncoder` [ref:1]：\n```xml\n<encoder class=\"org.springframework.boot.logging.logback.StructuredLogEncoder\">\n\t<format>${CONSOLE_LOG_STRUCTURED_FORMAT}</format>\n\t<charset>${CONSOLE_LOG_CHARSET}</charset>\n</encoder>\n```\n\n**Log4j2 示例：**\n替换原有的 PatternLayout 为 `StructuredLogLayout` [ref:1]：\n```xml\n<StructuredLogLayout format=\"${sys:CONSOLE_LOG_STRUCTURED_FORMAT}\" charset=\"${sys:CONSOLE_LOG_CHARSET}\"/>\n```\n\n### 3. 关于收集到 Elasticsearch\n提供的文档片段仅说明了如何生成 Logstash 格式的日志，**没有包含**如何使用 Logstash 工具本身去收集这些日志并发送到 Elasticsearch 的配置说明（例如 Logstash 的 pipeline 配置）。\n\n此外，文档中提到的 Elasticsearch 相关内容主要涉及 Spring Data Elasticsearch 的测试注解 `@DataElasticsearchTest` [ref:3]，这与日志收集无关。\n\n因此，若需了解具体的 Logstash 输入/输出插件配置以完成“收集”步骤，当前文档中没有找到相关内容。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "Logging > Structured Logging",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.structured"
+    }, {
+      "index" : 3,
+      "origin" : "Testing Spring Boot Applications > Auto-configured Data Elasticsearch Tests",
+      "url" : "https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html#testing.spring-boot-applications.autoconfigured-spring-data-elasticsearch"
+    }, {
+      "index" : 4,
+      "origin" : "Logging > Structured Logging > Logstash JSON format",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.structured.logstash"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Logging > Structured Logging",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.structured"
+    }, {
+      "index" : 2,
+      "origin" : "Logging",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging"
+    }, {
+      "index" : 3,
+      "origin" : "Testing Spring Boot Applications > Auto-configured Data Elasticsearch Tests",
+      "url" : "https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html#testing.spring-boot-applications.autoconfigured-spring-data-elasticsearch"
+    }, {
+      "index" : 4,
+      "origin" : "Logging > Structured Logging > Logstash JSON format",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.structured.logstash"
+    }, {
+      "index" : 5,
+      "origin" : "Logging > Custom Log Configuration",
+      "url" : "https://docs.spring.io/spring-boot/reference/features/logging.html#features.logging.custom-log-configuration"
+    } ],
+    "elapsed_ms" : 9313,
+    "error" : null
+  }, {
+    "id" : "r05",
+    "type" : "refuse",
+    "question" : "Spring Security 里 OAuth2 登录怎么配置？",
+    "key_points" : [ "应明确拒答：虽属 Spring 生态，但本次语料未收录 Security 文档" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "in-domain-absent",
+    "note" : null,
+    "answer" : "文档中没有找到关于通用 Spring Security OAuth2 登录（Login）配置的相关内容。\n\n提供的片段主要涉及 **Spring AI MCP** 模块中的安全配置，具体包括：\n1.  **MCP Client** 的 OAuth2 客户端配置（用于 `authorization_code` 或 `client_credentials` 流程），而非标准的用户登录流程 [ref:1]。\n2.  **MCP Server** 的 OAuth2 资源服务器配置，用于验证传入的 JWT Token [ref:5]。\n\n缺少标准 Web 应用中基于表单或 OIDC 的用户登录（Login）配置说明。",
+    "cited_sources" : [ {
+      "index" : 1,
+      "origin" : "MCP Security > MCP Client Security > Common Setup",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    }, {
+      "index" : 5,
+      "origin" : "MCP Security > MCP Server Security > OAuth 2.0 Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    } ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "MCP Security > MCP Client Security > Common Setup",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    }, {
+      "index" : 2,
+      "origin" : "MCP Security > MCP Server Security",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    }, {
+      "index" : 3,
+      "origin" : "MCP Security > MCP Server Security > OAuth 2.0 Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    }, {
+      "index" : 4,
+      "origin" : "MCP Security",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    }, {
+      "index" : 5,
+      "origin" : "MCP Security > MCP Server Security > OAuth 2.0 Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/mcp/mcp-security.html"
+    } ],
+    "elapsed_ms" : 4129,
+    "error" : null
+  }, {
+    "id" : "r06",
+    "type" : "refuse",
+    "question" : "Sentinel 的熔断降级规则怎么配置？",
+    "key_points" : [ "应明确拒答：语料不含 Sentinel/熔断降级组件" ],
+    "gold_source" : [ ],
+    "should_refuse" : true,
+    "refuse_scope" : "in-domain-absent",
+    "note" : null,
+    "answer" : "文档中没有找到相关内容。\n\n提供的文档片段仅涉及 Spring Framework 的事务管理（如 `@Transactional` 配置、回滚规则）以及 Spring AI 的 Redis 向量存储和语义缓存配置，不包含 Sentinel 熔断降级规则的配置信息。",
+    "cited_sources" : [ ],
+    "retrieved_sources" : [ {
+      "index" : 1,
+      "origin" : "Rolling Back a Declarative Transaction",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/rolling-back.html#transaction-declarative-rolling-back"
+    }, {
+      "index" : 2,
+      "origin" : "Redis > HNSW Algorithm Configuration",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 3,
+      "origin" : "Redis > Semantic Caching > Tuning the Similarity Threshold",
+      "url" : "https://docs.spring.io/spring-ai/reference/api/vectordbs/redis.html"
+    }, {
+      "index" : 4,
+      "origin" : "Using `@Transactional` > `@Transactional` Settings",
+      "url" : "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html#transaction-declarative-attransactional-settings"
+    } ],
+    "elapsed_ms" : 1844,
+    "error" : null
+  } ]
+}

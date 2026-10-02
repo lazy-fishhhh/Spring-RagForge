@@ -1,0 +1,335 @@
+{
+  "meta": {
+    "name": "Spring Documentation RAG Evaluation Set",
+    "version": "1.1",
+    "language": "en",
+    "judge_rules": {
+      "h04": "Precise-location question: the terms Prototype/Lookup are intentionally omitted from the question; retrieve by semantics.",
+      "h05": "Precise-location question: the annotation name is intentionally omitted from the question; retrieve by semantics.",
+      "h06": "Colloquial phrasing question: the term UriComponents does not appear in the question (it appears only in the answer).",
+      "h07": "Colloquial phrasing question: title words such as Testing / Running Server must not appear in the question.",
+      "h08": "Corpus-boundary question: only implementations listed in this section count; listing vector stores outside the corpus counts as wrong."
+    }
+  },
+  "questions": [
+    {
+      "id": "h01",
+      "type": "factual",
+      "question": "I want to initiate a model chat call in my project. How do I typically obtain the entry-point object, and what are the ways to create it?",
+      "key_points": [
+        "Customize an injected ChatClient.Builder and call build().",
+        "Alternatively, create it directly via static methods such as ChatClient.create(chatModel)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chatclient.adoc",
+          "section": "Chat Client API > Creating a ChatClient"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h02",
+      "type": "factual",
+      "question": "I want to insert several pieces of processing logic before and after a model request. What determines the order in which these logics run, and what are the key classes that make up this mechanism?",
+      "key_points": [
+        "Non-streaming: CallAdvisor / CallAdvisorChain; streaming: StreamAdvisor / StreamAdvisorChain.",
+        "Request and response objects: ChatClientRequest / ChatClientResponse, which can share an advisor context.",
+        "getOrder() determines the execution order in the chain; smaller values run first."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/advisors.adoc",
+          "section": "Advisors API > Core Components"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h03",
+      "type": "factual",
+      "question": "I only want to retrieve within documents from one specific source. How do I restrict the search scope?",
+      "key_points": [
+        "Pass a filter expression (e.g. module == 'x') together with the similarity search request to the VectorStore.",
+        "Metadata is written on the Document, and is matched by the expression at retrieval time."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Metadata Filters"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h04",
+      "type": "factual",
+      "question": "An object that should be newly created every time is injected into a long-lived object, but I find I always get the same old instance. How can I make it be recreated on every call?",
+      "key_points": [
+        "The container can override a method on a container-managed bean so that it returns a lookup result for another bean (Lookup Method Injection).",
+        "Under the hood it uses CGLIB to dynamically generate a subclass that overrides the method.",
+        "Limitation: neither the overridden class nor the method may be final."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/dependencies/factory-method-injection.adoc",
+          "section": "Method Injection > Lookup Method Injection"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h05",
+      "type": "factual",
+      "question": "An application has two data sources and two transaction managers. How do I indicate on a method which one to use?",
+      "key_points": [
+        "The annotation's value / transactionManager attribute can specify which transaction manager to use.",
+        "The value can be the bean name of the transaction manager, or a @Qualifier value."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/data-access/transaction/declarative/annotations.adoc",
+          "section": "Using `@Transactional` > Multiple Transaction Managers with `@Transactional`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h06",
+      "type": "factual",
+      "question": "I need to build a link that contains path variables and may also contain Chinese characters and spaces, and return it to the frontend. How do I encode it so it does not break or get truncated?",
+      "key_points": [
+        "UriComponentsBuilder has two levels of encoding: encode() first encodes the template, then strictly encodes variables when they are expanded.",
+        "UriComponents.encode() encodes after variable expansion; both convert non-ASCII and illegal characters into escaped bytes.",
+        "The choice depends on whether characters with reserved meaning in the path (e.g. ;) need to be preserved."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/mvc-uri-building.adoc",
+          "section": "URI Links > URI Encoding"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h07",
+      "type": "factual",
+      "question": "In a concurrent scenario, I want the application to actually listen on a port and then send HTTP requests to verify it. What is the officially recommended way to write this?",
+      "key_points": [
+        "Use @SpringBootTest(webEnvironment = RANDOM_PORT) to start a real server on a random port.",
+        "Inject the actual port with @LocalServerPort; to send requests, autowire RestTestClient (together with @AutoConfigureRestTestClient)."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-boot/reference/pages/testing/spring-boot-applications.adoc",
+          "section": "Testing Spring Boot Applications > Testing With a Running Server"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h08",
+      "type": "factual",
+      "question": "Which vector databases does Spring AI support? (List only those actually covered in the documentation.)",
+      "key_points": [
+        "Only list the implementations covered in this section (Azure, Apache Cassandra, Chroma, Elasticsearch, GemFire, etc.).",
+        "Do not list other vector stores from training knowledge as if they were in the documentation — this is a corpus-boundary question."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > VectorStore Implementations"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h09",
+      "type": "multi-hop",
+      "question": "I want to load documents into a vector store. How do I handle table creation and vector length (dimensions) so that I don't have to create them manually?",
+      "key_points": [
+        "In the pgvector auto-configuration, schema initialization can be enabled.",
+        "The dimensions must match the output dimensions of the embedding model being used.",
+        "This configuration item affects both table creation and subsequent inserts/retrieval."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/vectordbs/pgvector.adoc",
+          "section": "PGvector > Auto-Configuration"
+        },
+        {
+          "file": "spring-ai/api/vectordbs.adoc",
+          "section": "Vector Databases > Schema Initialization"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h10",
+      "type": "multi-hop",
+      "question": "The framework provides two extension points at different stages: one can modify configuration metadata before an object is created, and the other can wrap an object after it is instantiated. When does each of them take effect?",
+      "key_points": [
+        "BeanFactoryPostProcessor works at the bean-definition stage: it can read and modify configuration metadata (bean definitions).",
+        "BeanPostProcessor works after instantiation: it can wrap/proxy instances and affect behavior before and after initialization.",
+        "Typical uses: AOP proxies, annotation processing, property-injection enhancement."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Beans by Using a `BeanPostProcessor`"
+        },
+        {
+          "file": "spring-framework/core/beans/factory-extension.adoc",
+          "section": "Container Extension Points > Customizing Configuration Metadata with a `BeanFactoryPostProcessor`"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h11",
+      "type": "multi-hop",
+      "question": "Browser cross-origin requests are blocked, and after a reverse proxy the protocol and domain received are incorrect. Which two built-in framework components handle these two things respectively?",
+      "key_points": [
+        "CORS: preflight and response-header handling for cross-origin requests.",
+        "Forwarded Headers: correctly restore the original request's host/protocol/port behind a reverse proxy."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > CORS"
+        },
+        {
+          "file": "spring-framework/web/webmvc/filters.adoc",
+          "section": "Filters > Forwarded Headers"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h12",
+      "type": "multi-hop",
+      "question": "I want to run an open-source model locally. What are the prerequisites, and in which class are the tunable runtime options located?",
+      "key_points": [
+        "Prerequisites: install Ollama locally, or run it via Testcontainers; and pull the model you want to use.",
+        "Runtime options are provided by OllamaChatOptions (model, temperature, thinking mode, etc.); the older OllamaOptions is deprecated."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Prerequisites"
+        },
+        {
+          "file": "spring-ai/api/chat/ollama-chat.adoc",
+          "section": "Ollama Chat > Runtime Options"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h13",
+      "type": "multi-hop",
+      "question": "Which starter should be added for the MCP client and which for the MCP server respectively? How is the server protocol specified?",
+      "key_points": [
+        "Client: spring-ai-starter-mcp-client (supports STDIO / SSE / Streamable-HTTP and other transports).",
+        "Server: spring-ai-starter-mcp-server, with spring.ai.mcp.server.protocol specifying the protocol/transport."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-ai/api/mcp/mcp-client-boot-starter-docs.adoc",
+          "section": "MCP Client Boot Starter > Starters"
+        },
+        {
+          "file": "spring-ai/api/mcp/mcp-server-boot-starter-docs.adoc",
+          "section": "MCP Server Boot Starter > MCP Server Boot Starters"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "h14",
+      "type": "multi-hop",
+      "question": "After a method returns normally, and when it throws an exception, I want to execute different processing logic respectively. Which advice types in an aspect correspond to these, and which annotations are used for each?",
+      "key_points": [
+        "Executed on normal return: @AfterReturning.",
+        "Executed on exit by exception: @AfterThrowing."
+      ],
+      "gold_source": [
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Returning Advice"
+        },
+        {
+          "file": "spring-framework/core/aop/ataspectj/advice.adoc",
+          "section": "Declaring Advice > After Throwing Advice"
+        }
+      ],
+      "should_refuse": false
+    },
+    {
+      "id": "r01",
+      "type": "refuse",
+      "question": "How do I configure SASL/PLAIN authentication for Kafka?",
+      "key_points": [
+        "Should explicitly refuse: the corpus is the Spring Framework/Boot/AI official documentation and does not include Kafka configuration."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r02",
+      "type": "refuse",
+      "question": "How do I deploy a Nacos cluster and persist its configuration to MySQL?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Nacos."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r03",
+      "type": "refuse",
+      "question": "How do I use EventSource in Vue 3 to receive an SSE stream from the backend?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include frontend content."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r04",
+      "type": "refuse",
+      "question": "How do I use Logstash to collect Spring Boot logs into Elasticsearch?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include the Logstash/ELK collection pipeline."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "out-of-domain"
+    },
+    {
+      "id": "r05",
+      "type": "refuse",
+      "question": "How do I configure OAuth2 login in Spring Security?",
+      "key_points": [
+        "Should explicitly refuse: although it belongs to the Spring ecosystem, this corpus does not include the Security documentation."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    },
+    {
+      "id": "r06",
+      "type": "refuse",
+      "question": "How do I configure circuit-breaking and degradation rules in Sentinel?",
+      "key_points": [
+        "Should explicitly refuse: the corpus does not include Sentinel / circuit-breaking components."
+      ],
+      "gold_source": [],
+      "should_refuse": true,
+      "refuse_scope": "in-domain-absent"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 package com.springragforge.rag.ingest;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springragforge.config.BatchEmbeddingModel;
 import com.springragforge.rag.source.SourceLinkResolver;
@@ -13,7 +14,9 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -46,6 +49,9 @@ import java.util.stream.Stream;
  *
  * <p>每次跑完都会落盘两样东西：向量库和清单。清单里同时记着切分器签名和 embedding 模型名，
  * 这两样一变，历史向量就不可比了，直接清库全量重来。
+ *
+ * <p>向量库换成了 ES：删除和落盘的语义跟内存实现不同，见 {@link EsIndexSchema} 与
+ * {@link #resetStore()}。其余逻辑对着 {@code EmbeddingStore} 接口写，两种实现共用。
  */
 @Slf4j
 @Component
@@ -62,15 +68,23 @@ public class IncrementalIndexer {
     private final AsciiDocDocumentSplitter splitter;
     private final BatchEmbeddingModel batchEmbeddingModel;
 
+    /**
+     * ES 客户端。全量重建时要靠它「删索引 + 按 mapping 重建」，因为 store 层没有
+     * 这种操作。测试里灌的是内存实现，用不到，允许为 null。
+     */
+    private final ElasticsearchClient elasticsearchClient;
+
     /** 同一时刻只允许一次灌库，避免手动连点两次导致清单和向量库互相覆盖。 */
     private final AtomicBoolean running = new AtomicBoolean();
 
+    @Autowired
     public IncrementalIndexer(
             EmbeddingStore<TextSegment> store,
             EmbeddingModel embeddingModel,
             IngestProperties properties,
             ObjectMapper objectMapper,
-            @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}") String embeddingModelName) {
+            @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}") String embeddingModelName,
+            @Nullable ElasticsearchClient elasticsearchClient) {
         this.store = store;
         this.properties = properties;
         this.objectMapper = objectMapper;
@@ -78,6 +92,17 @@ public class IncrementalIndexer {
         this.splitter = new AsciiDocDocumentSplitter(properties.getCorpusRoot());
         // 单次请求条数有上限（DashScope 20 条），灌库必须分批
         this.batchEmbeddingModel = new BatchEmbeddingModel(embeddingModel);
+        this.elasticsearchClient = elasticsearchClient;
+    }
+
+    /** 测试用：不带 ES 客户端，灌内存实现。 */
+    IncrementalIndexer(
+            EmbeddingStore<TextSegment> store,
+            EmbeddingModel embeddingModel,
+            IngestProperties properties,
+            ObjectMapper objectMapper,
+            String embeddingModelName) {
+        this(store, embeddingModel, properties, objectMapper, embeddingModelName, null);
     }
 
     /**
@@ -110,8 +135,9 @@ public class IncrementalIndexer {
                 && signature.equals(manifest.getChunkerSignature())
                 && embeddingModelName.equals(manifest.getEmbeddingModel());
         if (!reusable) {
-            // 全量重建：清库比按 id 删干净，也顺便处理了「模型换了，旧向量不可比」
-            store.removeAll();
+            // 全量重建：清干净旧向量，也顺便处理了「模型换了，旧向量不可比」。
+            // 清库方式按 store 实现分派，见 resetStore()。
+            resetStore();
             manifest = new IngestManifest();
             log.info("灌库走全量重建（首次灌库 / 清单或向量库缺失 / 切分器或模型变更）");
         }
@@ -203,11 +229,33 @@ public class IncrementalIndexer {
     }
 
     /**
+     * 全量重建时清空历史向量。
+     *
+     * <p>两种实现语义不同，必须分开：
+     * <ul>
+     *   <li>内存实现：{@code removeAll()} 把内容清空，mapping 概念不存在，直接用。</li>
+     *   <li>ES 实现：{@code removeAll()} 是「删掉整个索引」（langchain4j 内部调
+     *       {@code indices.delete}），删完 mapping 一起没了，之后写入的向量只是普通数组，
+     *       KNN 检索会失败。所以 ES 走 {@link EsIndexSchema#recreateIndex}：
+     *       删索引 + 按当前维度重建。</li>
+     * </ul>
+     */
+    private void resetStore() {
+        if (elasticsearchClient != null && !(store instanceof InMemoryEmbeddingStore<?>)) {
+            EsIndexSchema.recreateIndex(
+                    elasticsearchClient, properties.getIndexName(), properties.getDimension());
+            return;
+        }
+        // 内存实现（原逻辑）：清空内容即可，没有 mapping 要维护。
+        store.removeAll();
+    }
+
+    /**
      * 向量库里上一次灌的数据还在不在。
      *
      * <p>只对「落盘的内存实现」有意义：进程重启后它从文件恢复，文件没了就是空库，
      * 这时清单再完整也不能信，否则会跳过所有文档、留下一个空库。
-     * 换成持久化 store 后库本身就在外部，不该再拿本地文件说事。
+     * ES 是外部持久化实现，数据不在本地文件里，直接返回 true（见下方分支）。
      */
     private boolean storeIntact() {
         if (!(store instanceof InMemoryEmbeddingStore<?>)) {
@@ -313,7 +361,12 @@ public class IncrementalIndexer {
         }
     }
 
-    /** 向量库落盘。只支持内存实现，换成持久化 store 后这里的落盘就该去掉。 */
+    /**
+     * 向量库落盘。只对内存实现有意义：它重启后要从文件恢复。
+     *
+     * <p>ES 是外部持久化存储，数据本身就在 ES 里，没有落盘这回事，
+     * 命中下面的分支打印一条 warn 直接跳过（旧代码保留备查）。
+     */
     private void serializeStore() {
         Path file = properties.getStoreFile();
         if (!(store instanceof InMemoryEmbeddingStore<?> inMemoryStore)) {
