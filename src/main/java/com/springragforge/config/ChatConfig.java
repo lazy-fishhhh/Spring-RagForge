@@ -9,10 +9,14 @@ import com.springragforge.rag.ingest.IngestProperties;
 import com.springragforge.rag.injector.NumberedContentInjector;
 import com.springragforge.rag.retriever.HybridContentRetriever;
 import com.springragforge.rag.retriever.QueryRewriter;
+import com.springragforge.rag.rerank.DashScopeScoringModel;
+import com.springragforge.rag.rerank.RerankProperties;
+import com.springragforge.rag.rerank.SourceCapturingContentAggregator;
+import com.springragforge.rag.rerank.TopNContentAggregator;
 import com.springragforge.rag.retriever.RetrievalProperties;
-import com.springragforge.rag.retriever.SourceCapturingContentRetriever;
 import com.springragforge.repository.RedisChatMemoryStore;
 import com.springragforge.service.ChatService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.mcp.McpToolProvider;
@@ -21,8 +25,11 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.scoring.ScoringModel;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
+import dev.langchain4j.rag.content.aggregator.ContentAggregator;
+import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
@@ -41,6 +48,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 @Configuration
 public class ChatConfig {
@@ -56,12 +64,12 @@ public class ChatConfig {
     private SourceRegistry sourceRegistry;
 
     @Bean
-    public ChatService chatService(ContentRetriever contentRetriever) {
-        // 用包装器包一层：召回的同时把片段元数据存进 SourceRegistry，供 Controller 回传来源
-        ContentRetriever capturingRetriever = new SourceCapturingContentRetriever(contentRetriever, sourceRegistry);
+    public ChatService chatService(ContentRetriever contentRetriever, ContentAggregator contentAggregator) {
+        // 检索管线三段：召回(retriever) → 聚合/重排(aggregator) → 注入(injector)。
         // 注入器要自己指定：默认那个不给片段编号、也不带出处，系统提示词里的引用规则就落不了地
         RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
-                .contentRetriever(capturingRetriever)
+                .contentRetriever(contentRetriever)
+                .contentAggregator(contentAggregator)
                 .contentInjector(new NumberedContentInjector())
                 .build();
         return AiServices.builder(ChatService.class)
@@ -70,6 +78,38 @@ public class ChatConfig {
                 .chatMemoryProvider(chatMemoryProvider())
                 .retrievalAugmentor(retrievalAugmentor)
                 .build();
+    }
+
+    /**
+     * 聚合段：重排就发生在这里。曝光成 bean 是为了让检索层评测也能走到重排
+     * （RetrievalEvalTest 直接注入它），否则那个测试只调 ContentRetriever，这一级被跳过。
+     *
+     * <p>重排开启：{@link ReRankingContentAggregator} 对候选池逐条打分、排序、取前 N；
+     * 关闭：只按 RRF 融合顺序截前 N（对照评测用）。两条路都用来源捕获包一层——
+     * 捕获点必须在聚合之后，否则回传前端的是重排前的候选池，会有没被引用的链接。
+     */
+    @Bean
+    public ContentAggregator contentAggregator(RetrievalProperties retrievalProperties,
+                                               RerankProperties rerankProperties,
+                                               ObjectMapper objectMapper) {
+        int maxResults = retrievalProperties.getMaxResults();
+        // 自写打分模型，填框架缺口；参数全来自配置
+        if (rerankProperties.isEnabled()) {
+            ScoringModel scoringModel = new DashScopeScoringModel(
+                    rerankProperties.getBaseUrl(),
+                    rerankProperties.getApiKey(),
+                    rerankProperties.getModelName(),
+                    Duration.ofSeconds(rerankProperties.getTimeoutSeconds()),
+                    objectMapper);
+            // 框架现成的聚合器：打分 → 降序 → minScore 过滤 → 截断
+            ContentAggregator rerank = ReRankingContentAggregator.builder()
+                    .scoringModel(scoringModel)
+                    .minScore(rerankProperties.getMinScore())
+                    .maxResults(maxResults)
+                    .build();
+            return new SourceCapturingContentAggregator(rerank, sourceRegistry);
+        }
+        return new SourceCapturingContentAggregator(new TopNContentAggregator(maxResults), sourceRegistry);
     }
 
     @Bean

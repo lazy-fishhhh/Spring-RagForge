@@ -7,6 +7,7 @@ import com.springragforge.rag.retriever.RetrievalProperties;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.query.Query;
 import jakarta.annotation.Resource;
@@ -20,12 +21,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * 检索层评测：只调 ContentRetriever，不过 LLM。
+ * 检索层评测：先调 ContentRetriever 召回，再走 ContentAggregator 重排（受 rag.rerank.enabled 控制），
+ * 不过 LLM。只调 retriever 的话重排那一级会被跳过，所以这里必须经聚合器。
+ *
  *
  * <p>每题取 top-K 命中，按 gold_source 的 (file, section) 判定是否命中：
  * <ul>
@@ -45,11 +51,14 @@ class RetrievalEvalTest {
     /** 评测集路径，相对项目根。改配置名/问题集都用系统属性覆盖，不动本类。 */
     private static final String DEFAULT_QUESTIONS = "eval/questions-f-m.json";
     /** 配置名，只用来给 CSV 命名，方便一次改一个变量时区分文件。 */
-    private static final String DEFAULT_CONFIG_NAME = "hunhe1";//baseline
+    private static final String DEFAULT_CONFIG_NAME = "hunhe0";//baseline
     private static final String DEFAULT_OUT_DIR = "eval";
 
     @Resource
     private ContentRetriever contentRetriever;
+
+    @Resource
+    private ContentAggregator contentAggregator;
 
     @Resource
     private RetrievalProperties retrievalProperties;
@@ -76,7 +85,12 @@ class RetrievalEvalTest {
 
         for (Question q : evalSet.questions()) {
             long startedAt = System.nanoTime();
-            List<Content> hits = contentRetriever.retrieve(Query.from(q.question()));
+            Query query = Query.from(q.question());
+            // 召回拿候选池，再经聚合器重排；延迟把重排那一次 HTTP 也算进去
+            List<Content> candidates = contentRetriever.retrieve(query);
+            Map<Query, Collection<List<Content>>> queryToContents = new LinkedHashMap<>();
+            queryToContents.put(query, List.of(candidates));
+            List<Content> hits = contentAggregator.aggregate(queryToContents);
             long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
             latencies.add(elapsedMs);
 

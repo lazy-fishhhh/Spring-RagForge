@@ -15,7 +15,7 @@ langchain4j:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       model-name: qwen3.8-flash
-      temperature: 0.3
+      temperature: 0
       reasoning-effort: none  # ????
       log-requests: true    # ??
       log-responses: true   # ??
@@ -70,7 +70,19 @@ rag:
     knn-num-candidates: 100
     # RRF 公式里的 k，默认 60；越大越削弱头部排名影响
     rrf-k: 20
-    # 融合后最终交给模型的片段数
+    # RRF 融合后交给重排器的候选数（重排输入池），必须 >= max-results
+    candidate-pool: 20
+    # 最终交给模型的片段数（重排后保留数）
     max-results: 5
     # 是否把中文问题改写成英文检索词再走 BM25。关掉即老行为，用于对照评测。
-    rewrite-enabled: true
+    rewrite-enabled: false
+
+  # 重排：召回之后的精排阶段，cross-encoder 逐条打分再取前 N
+  rerank:
+    enabled: false # 启动/禁用重排序
+    base-url: https://dashscope.aliyuncs.com/api/v1
+    api-key: ${DASHSCOPE_API_KEY}
+    model-name: qwen3.7-text-rerank
+    # 相关性分阈值，低于它的片段丢弃；留空表示不过滤（注意这是 0~1 的 cross-encoder 分）
+    # min-score: 0.3
+    timeout-seconds: 20

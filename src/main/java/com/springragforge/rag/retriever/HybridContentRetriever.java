@@ -34,7 +34,7 @@ import java.util.Map;
  * 但候选池不大（默认各 20 条），可以接受。
  *
  * <p>返回的片段仍带完整元数据（chunk_id / source / heading_path...），
- * 所以外层 {@link SourceCapturingContentRetriever} 和 NumberedContentInjector 照常能工作。
+ * 所以下游聚合阶段的 SourceCapturingContentAggregator 和 NumberedContentInjector 照常能工作。
  */
 @Slf4j
 public class HybridContentRetriever implements ContentRetriever {
@@ -89,7 +89,8 @@ public class HybridContentRetriever implements ContentRetriever {
                     ReciprocalRankFusion.fuse(List.of(bm25Ids, knnIds), properties.getRrfK());
 
             List<Content> contents = new ArrayList<>();
-            for (int i = 0; i < fused.size() && contents.size() < properties.getMaxResults(); i++) {
+            // 这里返回的是重排前的候选池（candidatePool），最终取几条由重排器决定
+            for (int i = 0; i < fused.size() && contents.size() < properties.getCandidatePool(); i++) {
                 Document doc = hitsById.get(fused.get(i).id());
                 if (doc != null) {
                     contents.add(toContent(doc));

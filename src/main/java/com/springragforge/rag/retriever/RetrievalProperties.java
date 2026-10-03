@@ -29,7 +29,13 @@ public class RetrievalProperties {
     /** RRF 公式里的 k，默认 60（论文取值）。越大越削弱头部排名的影响。 */
     private int rrfK = 60;
 
-    /** 融合后最终返回给模型的片段数。 */
+    /**
+     * RRF 融合后交给下游（重排器）的候选数。这是重排的输入池，不是最终返回数。
+     * 必须 >= maxResults，否则重排没有可重排的余地；重排关闭时它决定实际返回数上限。
+     */
+    private int candidatePool = 20;
+
+    /** 最终返回给模型的片段数（重排后保留数）。 */
     private int maxResults = 5;
 
     /**

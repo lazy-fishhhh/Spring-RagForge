@@ -49,7 +49,7 @@ class GenerationEvalTest {
 
     private static final String DEFAULT_QUESTIONS = "eval/question-shengcheng.json";
     /** 配置名，只用来给输出文件命名，方便一次改一个变量时区分跑批。 */
-    private static final String DEFAULT_CONFIG_NAME = "hunhe1";// baseline
+    private static final String DEFAULT_CONFIG_NAME = "hunhe0";// baseline
     private static final String DEFAULT_OUT_DIR = "eval";
     /** 单题上限。流式接口偶尔卡住时能继续跑下一题，不至于整批挂死。 */
     private static final Duration PER_QUESTION_TIMEOUT = Duration.ofMinutes(3);
