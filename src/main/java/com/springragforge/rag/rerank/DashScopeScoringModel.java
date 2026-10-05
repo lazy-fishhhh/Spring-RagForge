@@ -76,7 +76,7 @@ public class DashScopeScoringModel implements ScoringModel {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             String body = response.body();
             // 百炼的日志开关只覆盖它自家的模型，这里自己发的 HTTP 得自己打
-//            log.debug("重排响应 HTTP {}: {}", response.statusCode(), truncate(body));
+            log.debug("重排响应 HTTP {}: {}", response.statusCode(), truncate(body));
             if (response.statusCode() != 200) {
                 log.warn("重排调用失败 HTTP {}，退回 RRF 顺序: {}", response.statusCode(), truncate(body));
                 return Response.from(fallbackOrder(n));

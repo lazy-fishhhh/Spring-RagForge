@@ -39,6 +39,23 @@ public class RequestScopeCache {
         entry(memoryId, queryText).raw = raw;
     }
 
+    /**
+     * 读取「消解/改写后的问题」缓存。未命中返回 null。
+     *
+     * <p>键用<b>原始</b> query 文本，不是改写后的。重试时若重跑消解，LLM 两次输出可能不完全一致，
+     * 下游缓存（raw/aggregated）按 {@code query.text()} 做键就会 miss，整条检索白跑。钉住原文做键，
+     * 重试才能拿到同一份改写结果。
+     */
+    public String getTransformed(String memoryId, String queryText) {
+        Entry entry = lookup(memoryId, queryText);
+        return entry == null ? null : entry.transformed;
+    }
+
+    /** 写入「消解/改写后的问题」缓存，键为原始 query 文本。 */
+    public void putTransformed(String memoryId, String queryText, String transformed) {
+        entry(memoryId, queryText).transformed = transformed;
+    }
+
     /** 读取「聚合（含重排）」缓存。未命中返回 null。 */
     public List<Content> getAggregated(String memoryId, String queryText) {
         Entry entry = lookup(memoryId, queryText);
@@ -83,6 +100,7 @@ public class RequestScopeCache {
      * 用可变字段而不是不可变对象，是为了能分两次写入（先 raw 后 aggregated）。
      */
     private static final class Entry {
+        volatile String transformed;       // 消解/改写后的问题文本
         volatile List<Content> raw;        // 原始召回池
         volatile List<Content> aggregated; // 聚合（含重排）后的结果
     }

@@ -76,7 +76,7 @@ rag:
   retrieval:
     # 两路各自的候选池大小（融合前），不是最终返回数
     # BM25 吃的是改写后的英文关键词串，所以这里恢复非 0，否则那一路白接
-    bm25-top-k: 20
+    bm25-top-k: 0
     knn-top-k: 20
     # KNN 参与近邻计算的候选数，越大越准越慢，必须 >= knn-top-k
     knn-num-candidates: 100

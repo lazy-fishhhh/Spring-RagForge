@@ -10,9 +10,11 @@ import com.springragforge.rag.ingest.IngestProperties;
 import com.springragforge.rag.injector.NumberedContentInjector;
 import com.springragforge.rag.ratelimit.RateLimitProperties;
 import com.springragforge.rag.resilience.CachingContentAggregator;
+import com.springragforge.rag.resilience.CachingQueryTransformer;
 import com.springragforge.rag.resilience.RequestScopeCache;
 import com.springragforge.rag.resilience.ResilienceProperties;
 import com.springragforge.rag.retriever.CachingContentRetriever;
+import com.springragforge.rag.retriever.CoreferenceQueryTransformer;
 import com.springragforge.rag.retriever.HybridContentRetriever;
 import com.springragforge.rag.retriever.QueryRewriter;
 import com.springragforge.service.ResilientChatService;
@@ -31,6 +33,7 @@ import dev.langchain4j.mcp.McpToolProvider;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.scoring.ScoringModel;
@@ -40,6 +43,8 @@ import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
+import dev.langchain4j.rag.query.transformer.CompressingQueryTransformer;
+import dev.langchain4j.rag.query.transformer.QueryTransformer;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.search.simple.SimpleToolSearchStrategy;
 import dev.langchain4j.skills.FileSystemSkillLoader;
@@ -78,15 +83,17 @@ public class ChatConfig {
     @Bean
     public ChatService chatService(ContentRetriever contentRetriever,
                                    ContentAggregator contentAggregator,
+                                   QueryTransformer queryTransformer,
                                    ResilienceProperties resilienceProperties,
                                    DegradationRegistry degradationRegistry,
                                    RequestScopeCache requestScopeCache,
                                    RateLimitProperties rateLimitProperties,
                                    RateLimiter chatRateLimiter,
                                    Bulkhead chatBulkhead) {
-        // 检索管线三段：召回(retriever) → 聚合/重排(aggregator) → 注入(injector)。
+        // 检索管线四段：改写/消解(transformer) → 召回(retriever) → 聚合/重排(aggregator) → 注入(injector)。
         // 注入器要自己指定：默认那个不给片段编号、也不带出处，系统提示词里的引用规则就落不了地
         RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
+                .queryTransformer(queryTransformer)
                 .contentRetriever(contentRetriever)
                 .contentAggregator(contentAggregator)
                 .contentInjector(new NumberedContentInjector())
@@ -174,6 +181,22 @@ public class ChatConfig {
         }
         // 缓存包在最外层：命中就整个跳过重排，重试时不再打重排接口
         return new CachingContentAggregator(inner, requestScopeCache, resilienceProperties);
+    }
+
+    /**
+     * 多轮指代消解层：挂在 {@link RetrievalAugmentor} 最前，把带指代的追问结合会话历史改成独立问题。
+     * 复用官方 {@link CompressingQueryTransformer}，外面包失败回退（见 {@link CoreferenceQueryTransformer}）。
+     * 用非流式 {@link ChatModel}：消解要在检索前拿到完整结果，流式没有意义。
+     *
+     * <p>最外层再包请求级缓存：重试时不再重打消解 LLM，也避免改写文本漂移把下游检索缓存全部打穿。
+     */
+    @Bean
+    public QueryTransformer queryTransformer(ChatModel chatModel,
+                                             RequestScopeCache requestScopeCache,
+                                             ResilienceProperties resilienceProperties) {
+        QueryTransformer coreference =
+                new CoreferenceQueryTransformer(new CompressingQueryTransformer(chatModel));
+        return new CachingQueryTransformer(coreference, requestScopeCache, resilienceProperties);
     }
 
     @Bean
