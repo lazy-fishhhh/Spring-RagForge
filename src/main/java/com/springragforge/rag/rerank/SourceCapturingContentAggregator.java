@@ -53,10 +53,11 @@ public class SourceCapturingContentAggregator implements ContentAggregator {
     private static List<SourceInfo> toSourceInfos(List<Content> contents) {
         List<SourceInfo> sources = new ArrayList<>(contents.size());
         for (int i = 0; i < contents.size(); i++) {
-            Metadata metadata = contents.get(i).textSegment().metadata();
+            TextSegment segment = contents.get(i).textSegment();
+            Metadata metadata = segment.metadata();
             String origin = extractOrigin(metadata);
             String url = metadata.getString("source");
-            sources.add(new SourceInfo(i + 1, origin, url));
+            sources.add(new SourceInfo(i + 1, origin, url, segment.text()));
         }
         return sources;
     }

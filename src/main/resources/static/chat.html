@@ -243,6 +243,17 @@
             color: var(--primary);
         }
 
+        /* 降级横幅：模型不可用，回答来自检索原文 */
+        .degraded {
+            margin-top: 12px;
+            padding: 8px 10px;
+            border-left: 3px solid #e0a030;
+            background: rgba(224, 160, 48, 0.12);
+            border-radius: 4px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
         .thinking {
             color: var(--muted);
             font-style: italic;
@@ -2179,6 +2190,7 @@
     let streamEnded = false;  // 网络流是否已结束（[DONE] / reader done）
     let aborted = false;      // 本次请求是否被"新对话"中止
     let sourcesText = null;   // 本次回答的参考来源（来自 event: sources）
+    let degradedReason = null; // 本次回答是否降级及原因（来自 event: degraded）
 
     function scrollToBottom() {
         chatBox.scrollTop = chatBox.scrollHeight;
@@ -2214,6 +2226,7 @@
         rawMarkdown = '';
         started = false;
         sourcesText = null;
+        degradedReason = null;
         if (typingTimer) clearInterval(typingTimer);
         typingTimer = setInterval(typeTick, 10);
     }
@@ -2249,19 +2262,31 @@
                 activeAiText.textContent = errorMsg;         // 纯文本，不走渲染
             } else if (!started) {
                 activeAiText.textContent = '（无回复）';     // 覆盖"正在思考…"
-            } else if (sourcesText && !aborted) {
-                // 打字机结束后，把参考来源渲染成带样式的 HTML 追加到消息末尾
-                const sourcesDiv = document.createElement('div');
-                sourcesDiv.className = 'sources';
-                sourcesDiv.innerHTML = DOMPurify.sanitize(renderSources(sourcesText));
-                activeAiText.appendChild(sourcesDiv);
-                scrollToBottom();
+            } else {
+                // 降级横幅：模型不可用，正文是检索原文（或纯道歉），先于来源展示
+                if (degradedReason && !aborted) {
+                    const degradedDiv = document.createElement('div');
+                    degradedDiv.className = 'degraded';
+                    degradedDiv.textContent = degradedReason === 'model_and_retrieval_unavailable'
+                        ? '本条回答已降级：模型与检索服务暂时不可用。'
+                        : '本条回答已降级：模型暂时不可用，内容来自检索原文。';
+                    activeAiText.appendChild(degradedDiv);
+                }
+                if (sourcesText && !aborted) {
+                    // 打字机结束后，把参考来源渲染成带样式的 HTML 追加到消息末尾
+                    const sourcesDiv = document.createElement('div');
+                    sourcesDiv.className = 'sources';
+                    sourcesDiv.innerHTML = DOMPurify.sanitize(renderSources(sourcesText));
+                    activeAiText.appendChild(sourcesDiv);
+                }
+                if (!aborted) scrollToBottom();
             }
         }
         activeAiText = null;
         pendingText = '';
         rawMarkdown = '';
         sourcesText = null;
+        degradedReason = null;
         streamEnded = false;
         aborted = false;
         setStreaming(false);
@@ -2342,6 +2367,8 @@
                     }
                     if (ev.event === 'sources') {
                         sourcesText = ev.data;
+                    } else if (ev.event === 'degraded') {
+                        degradedReason = ev.data;
                     } else {
                         pendingText += ev.data; // 累积到打字机缓冲，由定时器逐字输出
                     }
@@ -2354,6 +2381,8 @@
                 if (ev && ev.data !== '[DONE]') {
                     if (ev.event === 'sources') {
                         sourcesText = ev.data;
+                    } else if (ev.event === 'degraded') {
+                        degradedReason = ev.data;
                     } else {
                         pendingText += ev.data;
                     }

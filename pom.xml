@@ -17,6 +17,7 @@
     <properties>
         <java.version>17</java.version>
         <langchain4j.version>1.18.1-beta28</langchain4j.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
     <dependencies>
         <dependency>
@@ -98,9 +99,33 @@
             <artifactId>lombok</artifactId>
         </dependency>
 
+        <!--限流：速率闸(RateLimiter)+并发闸(Bulkhead)，reactor 算子直接套 Flux，超限快速失败-->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-ratelimiter</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-bulkhead</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-reactor</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--StepVerifier：流式韧性测试用虚拟时钟断言超时/重试，不依赖真实等待-->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

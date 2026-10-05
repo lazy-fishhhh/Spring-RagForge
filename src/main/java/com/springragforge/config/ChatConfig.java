@@ -3,12 +3,19 @@ package com.springragforge.config;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import com.springragforge.constant.SystemPrompts;
+import com.springragforge.rag.DegradationRegistry;
 import com.springragforge.rag.SourceRegistry;
 import com.springragforge.rag.ingest.EsIndexSchema;
 import com.springragforge.rag.ingest.IngestProperties;
 import com.springragforge.rag.injector.NumberedContentInjector;
+import com.springragforge.rag.ratelimit.RateLimitProperties;
+import com.springragforge.rag.resilience.CachingContentAggregator;
+import com.springragforge.rag.resilience.RequestScopeCache;
+import com.springragforge.rag.resilience.ResilienceProperties;
+import com.springragforge.rag.retriever.CachingContentRetriever;
 import com.springragforge.rag.retriever.HybridContentRetriever;
 import com.springragforge.rag.retriever.QueryRewriter;
+import com.springragforge.service.ResilientChatService;
 import com.springragforge.rag.rerank.DashScopeScoringModel;
 import com.springragforge.rag.rerank.RerankProperties;
 import com.springragforge.rag.rerank.SourceCapturingContentAggregator;
@@ -16,6 +23,7 @@ import com.springragforge.rag.rerank.TopNContentAggregator;
 import com.springragforge.rag.retriever.RetrievalProperties;
 import com.springragforge.repository.RedisChatMemoryStore;
 import com.springragforge.service.ChatService;
+import com.springragforge.service.RateLimitedChatService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.segment.TextSegment;
@@ -40,6 +48,10 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchEmbeddingStore;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import jakarta.annotation.Resource;
 import org.apache.http.HttpHost;
 import org.elasticsearch.client.RestClient;
@@ -64,7 +76,14 @@ public class ChatConfig {
     private SourceRegistry sourceRegistry;
 
     @Bean
-    public ChatService chatService(ContentRetriever contentRetriever, ContentAggregator contentAggregator) {
+    public ChatService chatService(ContentRetriever contentRetriever,
+                                   ContentAggregator contentAggregator,
+                                   ResilienceProperties resilienceProperties,
+                                   DegradationRegistry degradationRegistry,
+                                   RequestScopeCache requestScopeCache,
+                                   RateLimitProperties rateLimitProperties,
+                                   RateLimiter chatRateLimiter,
+                                   Bulkhead chatBulkhead) {
         // 检索管线三段：召回(retriever) → 聚合/重排(aggregator) → 注入(injector)。
         // 注入器要自己指定：默认那个不给片段编号、也不带出处，系统提示词里的引用规则就落不了地
         RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
@@ -72,12 +91,51 @@ public class ChatConfig {
                 .contentAggregator(contentAggregator)
                 .contentInjector(new NumberedContentInjector())
                 .build();
-        return AiServices.builder(ChatService.class)
+        ChatService assistant = AiServices.builder(ChatService.class)
                 .systemMessage(SystemPrompts.SYSTEM_PROMPT)
                 .streamingChatModel(streamingChatModel)
                 .chatMemoryProvider(chatMemoryProvider())
                 .retrievalAugmentor(retrievalAugmentor)
                 .build();
+        // 代理外面套一层超时/重试/降级；控制器和评测走接口，拿到的是这一层
+        ChatService resilient = new ResilientChatService(assistant, resilienceProperties, sourceRegistry,
+                degradationRegistry, requestScopeCache);
+        // 限流在最外层：一次请求（含内部重试）只算一个令牌、占一个并发位
+        return new RateLimitedChatService(resilient, rateLimitProperties, chatRateLimiter, chatBulkhead);
+    }
+
+    /**
+     * 速率闸：令牌桶。每 {@code limitRefreshPeriod} 补满 {@code limitForPeriod} 个令牌，
+     * 取不到就立刻拒绝（timeoutDuration=0，不排队阻塞反应式线程）。
+     * RateLimiter = 令牌桶限流器。它按固定周期往桶里补充令牌，每个请求来取一个令牌，取到才放行。
+     */
+    @Bean
+    public RateLimiter chatRateLimiter(RateLimitProperties properties) {
+        return RateLimiter.of("chat", RateLimiterConfig.custom()
+                // 每个刷新周期补多少令牌 = 每周期最多放行多少个请求
+                .limitForPeriod(properties.getLimitForPeriod())
+                // 刷新周期：多久补一次令牌（配合上一项，决定"每秒/每分钟多少个请求"）
+                .limitRefreshPeriod(properties.getLimitRefreshPeriod())
+                // 取不到令牌时的等待时长。ZERO = 不等、不排队，立刻抛 RequestNotPermitted。
+                // 必须为 0：Reactor 线程是共享事件循环，一旦在此阻塞会拖垮整条链。
+                .timeoutDuration(Duration.ZERO)
+                .build());
+    }
+
+    /**
+     * 并发闸：信号量型。限制同时在途的请求数，取不到立刻拒绝（maxWaitDuration=0）。
+     * 默认就是 SEMAPHORE 类型，maxConcurrentCalls 即为许可总数。
+     * Bulkhead = 并发数限制器（隔板）。它限制同时在途的请求数——同时有几个请求在跑，超过就拒绝。
+     */
+    @Bean
+    public Bulkhead chatBulkhead(RateLimitProperties properties) {
+        return Bulkhead.of("chat", BulkheadConfig.custom()
+                // 最大同时在途请求数 = 许可总数。超过就取不到许可，进入拒绝分支。
+                .maxConcurrentCalls(properties.getMaxConcurrentCalls())
+                // 取不到许可时的等待时长。ZERO = 不等、不排队，立刻抛 BulkheadFullException。
+                // 同速率闸：不能在响应式线程上阻塞等待。
+                .maxWaitDuration(Duration.ZERO)
+                .build());
     }
 
     /**
@@ -91,9 +149,12 @@ public class ChatConfig {
     @Bean
     public ContentAggregator contentAggregator(RetrievalProperties retrievalProperties,
                                                RerankProperties rerankProperties,
-                                               ObjectMapper objectMapper) {
+                                               ObjectMapper objectMapper,
+                                               RequestScopeCache requestScopeCache,
+                                               ResilienceProperties resilienceProperties) {
         int maxResults = retrievalProperties.getMaxResults();
         // 自写打分模型，填框架缺口；参数全来自配置
+        ContentAggregator inner;
         if (rerankProperties.isEnabled()) {
             ScoringModel scoringModel = new DashScopeScoringModel(
                     rerankProperties.getBaseUrl(),
@@ -107,9 +168,12 @@ public class ChatConfig {
                     .minScore(rerankProperties.getMinScore())
                     .maxResults(maxResults)
                     .build();
-            return new SourceCapturingContentAggregator(rerank, sourceRegistry);
+            inner = new SourceCapturingContentAggregator(rerank, sourceRegistry);
+        } else {
+            inner = new SourceCapturingContentAggregator(new TopNContentAggregator(maxResults), sourceRegistry);
         }
-        return new SourceCapturingContentAggregator(new TopNContentAggregator(maxResults), sourceRegistry);
+        // 缓存包在最外层：命中就整个跳过重排，重试时不再打重排接口
+        return new CachingContentAggregator(inner, requestScopeCache, resilienceProperties);
     }
 
     @Bean
@@ -166,11 +230,15 @@ public class ChatConfig {
                                              EmbeddingModel embeddingModel,
                                              IngestProperties ingestProperties,
                                              RetrievalProperties retrievalProperties,
-                                             QueryRewriter queryRewriter) {
+                                             QueryRewriter queryRewriter,
+                                             RequestScopeCache requestScopeCache,
+                                             ResilienceProperties resilienceProperties) {
         // 换成混合检索：BM25 + KNN 双路，RRF 融合。实现见 HybridContentRetriever。
         // BM25 那一路吃 QueryRewriter 改写出的英文关键词串，见该类说明。
-        return new HybridContentRetriever(elasticsearchClient, embeddingModel,
+        HybridContentRetriever hybrid = new HybridContentRetriever(elasticsearchClient, embeddingModel,
                 ingestProperties.getIndexName(), retrievalProperties, queryRewriter);
+        // 缓存包在外面：重试时同一次提问不再重打 ES / embedding
+        return new CachingContentRetriever(hybrid, requestScopeCache, resilienceProperties);
     }
 //    // 老逻辑（纯向量检索），保留备查：minScore 是内存/向量分数语义下的阈值，
 //    // RRF 融合后的分数是 1/(k+rank) 量级（约 0.016），这套阈值不适用，所以换成混合后不再用。

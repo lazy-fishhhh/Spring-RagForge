@@ -9,6 +9,9 @@ langchain4j:
       model-name: qwen3.8-flash
       temperature: 0
       reasoning-effort: none
+      # 非流式这条路没有应用层韧性包裹，靠模型自带超时兜底（改写挂了 QueryRewriter 会退回原问题）
+      timeout: 10s
+      max-retries: 2
       log-requests: true
       log-responses: true
     streaming-chat-model:
@@ -19,11 +22,20 @@ langchain4j:
       reasoning-effort: none  # ????
       log-requests: true    # ??
       log-responses: true   # ??
+      # 流式响应默认不带 token usage。手动要求 OpenAI 兼容接口在最后一块补上
+      # （langchain4j 1.18.1 自己不发 include_usage）。若接口不认 stream_options 而报 400，
+      # 把下面两行删掉即可，代价是流式这条路的用量统计不到。
+      custom-parameters:
+        stream_options:
+          include_usage: true
     # ????
     embedding-model:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       model-name: qwen3.7-text-embedding-flash
+      # 检索路径同样没有应用层韧性包裹，超时/重试由模型自带
+      timeout: 10s
+      max-retries: 2
 logging:
   level:
     com.springragforge: debug
@@ -86,3 +98,44 @@ rag:
     # 相关性分阈值，低于它的片段丢弃；留空表示不过滤（注意这是 0~1 的 cross-encoder 分）
     # min-score: 0.3
     timeout-seconds: 20
+
+  # 生成层韧性：首 token 前可重试（无损），首 token 后只做空闲超时（重试会导致重复内容）
+  resilience:
+    enabled: true
+    # 单次尝试的首 token 超时（t）
+    first-token-timeout: 10s
+    # 首 token 后逐间隔空闲超时，必须小于 overall-deadline
+    idle-timeout: 15s
+    # 整轮重试循环硬上限（D）
+    overall-deadline: 30s
+    # 重试次数，总尝试 = 次数 + 1
+    max-retries: 2
+    min-backoff: 200ms
+    max-backoff: 2s
+    jitter: 0.5
+
+  # 限流：最外层，全局单实例。速率闸先拦请求频率，并发闸再控同时在途的流数，超限快速失败
+  rate-limit:
+    enabled: true
+    # 每个刷新周期允许通过的请求数（速率闸）
+    limit-for-period: 20
+    # 刷新周期长度
+    limit-refresh-period: 1s
+    # 同时在途请求数上限（并发闸，含整个 SSE 流持续的时间）
+    max-concurrent-calls: 10
+
+  # token 用量与成本统计：监听器截模型返回的 usage，Redis 累计，GET /admin/usage 出报表
+  usage:
+    enabled: true
+    # 每次模型调用后打一行用量日志
+    log-each-call: true
+    # 价格表：按模型名精确匹配，单位「每百万 token」，币种随计费方。
+    # 下面的金额是占位 0，按实际资费改；查不到价格的模型只报 token 数、不报金额。
+    # 注意：只覆盖 chat / streaming-chat 两个模型，embedding 与自写重排不在内。
+    pricing:
+      - model-name: qwen3.8-flash
+        input-per-million: 0.8
+        output-per-million: 2.7
+      - model-name: qwen3.7-text-embedding-flash
+        input-per-million: 0.5
+        output-per-million: 0.0

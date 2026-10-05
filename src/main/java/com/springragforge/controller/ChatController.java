@@ -1,5 +1,6 @@
 package com.springragforge.controller;
 
+import com.springragforge.rag.DegradationRegistry;
 import com.springragforge.rag.SourceInfo;
 import com.springragforge.rag.SourceRegistry;
 import com.springragforge.service.ChatService;
@@ -28,6 +29,9 @@ public class ChatController {
     @Resource
     private SourceRegistry sourceRegistry;
 
+    @Resource
+    private DegradationRegistry degradationRegistry;
+
     @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chat(String message, String memoryId) {
         // 累积模型输出的完整正文，流结束后从中提取被引用的来源编号，只返回模型实际用到的来源。
@@ -38,7 +42,20 @@ public class ChatController {
                 .doOnNext(answerBuffer::append)
                 .map(token -> ServerSentEvent.<String>builder()
                         .data(token).build())
-                // 3. 正文流结束后，追加一条"参考来源"事件
+                // 3. 若本次回答走了降级（模型不可用，返回的是检索原文），先推一条命名事件，
+                //    前端据此显示降级横幅。正常回答时该注册表为空，直接跳过。
+                .concatWith(Flux.defer(() -> {
+                    if (memoryId == null) {
+                        return Flux.<ServerSentEvent<String>>empty();
+                    }
+                    String reason = degradationRegistry.get(memoryId);
+                    if (reason == null) {
+                        return Flux.<ServerSentEvent<String>>empty();
+                    }
+                    return Flux.just(ServerSentEvent.<String>builder()
+                            .event("degraded").data(reason).build());
+                }))
+                // 4. 正文流结束后，追加一条"参考来源"事件
                 //    必须用 Flux.defer 惰性求值：只有前面的 token 流真正结束后才执行，
                 //    此时 answerBuffer 已完整，sourceRegistry 里也已写入检索结果。
                 .concatWith(Flux.defer(() -> {
@@ -59,11 +76,14 @@ public class ChatController {
                     return Flux.just(ServerSentEvent.<String>builder()
                             .event("sources").data(payload).build());
                 }))
-                // 4. 最后追加结束标记 [DONE]，客户端据此关闭连接
+                // 5. 最后追加结束标记 [DONE]，客户端据此关闭连接
                 .concatWith(Flux.just(ServerSentEvent.<String>builder()
                         .data("[DONE]").build()))
-                // 5. 无论流是正常完成、出错还是被客户端取消，都清理该 memoryId 对应的来源数据，防止内存泄漏
-                .doFinally(signal -> sourceRegistry.remove(memoryId));
+                // 6. 无论流是正常完成、出错还是被客户端取消，都清理该 memoryId 对应的临时数据，防止内存泄漏
+                .doFinally(signal -> {
+                    sourceRegistry.remove(memoryId);
+                    degradationRegistry.remove(memoryId);
+                });
     }
 
     /** 从模型回答正文里提取所有 [ref:n] 引用编号。模型虚构的编号（如召回只有 5 条却写了 [ref:6]）会在 filter 阶段被自然忽略。 */
