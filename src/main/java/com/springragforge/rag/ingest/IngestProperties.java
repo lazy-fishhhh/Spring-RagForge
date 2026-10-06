@@ -20,7 +20,10 @@ import java.nio.file.Path;
 @ConfigurationProperties(prefix = "rag.ingest")
 public class IngestProperties {
 
-    /** 语料根目录。下面一层是语料源（spring-framework / spring-boot / spring-ai）。 */
+    /**
+     * 语料根。local 存储时是真实磁盘目录；minio 存储时是虚拟根名，
+     * 只参与 chunk_id 的前缀换算，对象 key 相对 bucket 根计算。
+     */
     private String corpusRoot = SourceLinkResolver.DEFAULT_CORPUS_ROOT;
 
     /** 向量库落盘文件。启动时从这里加载，灌库后写回。 */

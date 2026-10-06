@@ -46,6 +46,11 @@ server:
     max-http-form-post-size: 1GB
 
 spring:
+  servlet:
+    multipart:
+      # 上传接口的文件大小上限，默认只有 1MB 会直接拒掉文档
+      max-file-size: 100MB
+      max-request-size: 1GB
   data:
     redis:
       host: localhost
@@ -58,11 +63,23 @@ spring:
           min-idle: 0   # ??????
           max-wait: 100 # ??????
 
+# MinIO 对象存储。endpoint 必须是 S3 API 地址：
+# http://192.168.16.128:9001/browser/rag-docs 是控制台（9001），
+# S3 API 默认在 9000；若部署时改过端口，把下面 endpoint 换成实际 API 端口。
+minio:
+  endpoint: http://192.168.16.128:9000
+  access-key: ${MINIO_ACCESS_KEY:admin}
+  secret-key: ${MINIO_SECRET_KEY:12345678}
+  bucket: rag-docs
+
 rag:
   ingest:
-    # 语料根目录。下面一层目录是语料源，目前支持 spring-framework / spring-boot / spring-ai。
-    # 灌库按这个根扫全部 .adoc，根之外的 adoc 换不出跳转链接，会被跳过。
-    corpus-root: E:/springDoc/corpus
+    # 语料存储方式：minio（默认，从 rag-docs bucket 读）/ local（本地磁盘）
+    storage: minio
+    # MinIO 模式下是虚拟语料根，只参与 chunk_id 前缀换算；
+    # 对象 key 相对 bucket 根计算，如 spring-boot/reference/pages/web/servlet.adoc。
+    # local 模式下这里要写真实语料根目录。
+    corpus-root: rag-docs
     # 向量库落盘位置，启动时从这里加载
     store-file: data/embedding-store.json
     # 灌库清单，增量比对靠它；删了就等于全量重建

@@ -57,7 +57,8 @@ class IncrementalIndexerTest {
     }
 
     private IncrementalIndexer newIndexer() {
-        return new IncrementalIndexer(store, embeddingModel, properties, objectMapper, "fake-embedding-model");
+        return new IncrementalIndexer(store, embeddingModel, properties, objectMapper,
+                new LocalDocumentSource(properties), "fake-embedding-model");
     }
 
     @Test
@@ -164,6 +165,28 @@ class IncrementalIndexerTest {
         assertThat(embeddingModel.calls()).isEqualTo(callsAfterFirstRun);
         assertThat(store.clearCount()).isEqualTo(clearsAfterFirstRun);
         assertThat(store.removedIds()).isEmpty();
+    }
+
+    @Test
+    void emptyScanWithNonEmptyManifestAbortsWithoutWipingVectors() throws IOException {
+        writeDoc(ADVICE, adoc("Declaring Advice", "Before advice runs before the join point."));
+        writeDoc(SERVLET, adoc("Servlet Web Applications", "Spring MVC is built on the Servlet API."));
+        indexer.reindex();
+        int callsAfterFirstRun = embeddingModel.calls();
+        int clearsAfterFirstRun = store.clearCount();
+
+        // 语料整体消失（等同于 bucket 空了），清单里却还记着两篇
+        Files.deleteIfExists(corpusRoot.resolve(ADVICE));
+        Files.deleteIfExists(corpusRoot.resolve(SERVLET));
+
+        assertThatThrownBy(indexer::reindex)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("扫描到的语料为空");
+        // 中止发生在删任何向量之前
+        assertThat(embeddingModel.calls()).isEqualTo(callsAfterFirstRun);
+        assertThat(store.clearCount()).isEqualTo(clearsAfterFirstRun);
+        assertThat(store.removedIds()).isEmpty();
+        assertThat(manifest().getDocuments()).containsOnlyKeys(ADVICE, SERVLET);
     }
 
     private Path writeDoc(String relativePath, String text) throws IOException {

@@ -3,11 +3,9 @@ package com.springragforge.rag.ingest;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.springragforge.config.BatchEmbeddingModel;
-import com.springragforge.rag.source.SourceLinkResolver;
 import com.springragforge.rag.splitter.AsciiDocDocumentSplitter;
 import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
-import dev.langchain4j.data.document.parser.TextDocumentParser;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -20,8 +18,8 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -31,10 +29,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 /**
  * 增量灌库：只重灌内容变了的文档，没变的直接跳过。
@@ -63,6 +59,8 @@ public class IncrementalIndexer {
     private final EmbeddingStore<TextSegment> store;
     private final IngestProperties properties;
     private final ObjectMapper objectMapper;
+    /** 语料来源：本地磁盘或 MinIO，按 rag.ingest.storage 配置选择。 */
+    private final DocumentSource documentSource;
     private final String embeddingModelName;
     /** 切分器按配置里的语料根构造，保证切出来的 chunk_id 和清单里的 key 同源。 */
     private final AsciiDocDocumentSplitter splitter;
@@ -83,11 +81,13 @@ public class IncrementalIndexer {
             EmbeddingModel embeddingModel,
             IngestProperties properties,
             ObjectMapper objectMapper,
+            DocumentSource documentSource,
             @Value("${langchain4j.open-ai.embedding-model.model-name:unknown}") String embeddingModelName,
             @Nullable ElasticsearchClient elasticsearchClient) {
         this.store = store;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.documentSource = documentSource;
         this.embeddingModelName = embeddingModelName;
         this.splitter = new AsciiDocDocumentSplitter(properties.getCorpusRoot());
         // 单次请求条数有上限（DashScope 20 条），灌库必须分批
@@ -101,8 +101,10 @@ public class IncrementalIndexer {
             EmbeddingModel embeddingModel,
             IngestProperties properties,
             ObjectMapper objectMapper,
+            DocumentSource documentSource,
             String embeddingModelName) {
-        this(store, embeddingModel, properties, objectMapper, embeddingModelName, null);
+        this(store, embeddingModel, properties, objectMapper, documentSource,
+                embeddingModelName, null);
     }
 
     /**
@@ -124,10 +126,16 @@ public class IncrementalIndexer {
     }
 
     private IngestStats doReindex(long startedAt) {
-        // 先扫盘再动数据：语料根配错时要在删任何东西之前就抛出去
-        Map<String, Path> files = scanCorpus();
+        // 先扫描再动数据：语料根配错时要在删任何东西之前就抛出去
+        Map<String, DocumentSource.StoredDocument> files = documentSource.scan();
 
         IngestManifest manifest = readManifest();
+        // 扫描结果为空但清单里还记着文档：多半是存储侧出了问题（bucket 空了、挂载点了、
+        // 语料被误清），此时按「文档已删除」继续会把向量库清空。宁可中止。
+        if (manifest != null && !manifest.getDocuments().isEmpty() && files.isEmpty()) {
+            throw new IllegalStateException("扫描到的语料为空，但清单里还有 "
+                    + manifest.getDocuments().size() + " 篇文档，已中止灌库（不会删除任何向量）");
+        }
         String signature = splitter.signature();
         // 清单丢了、清单和当前配置不匹配、或落盘的向量库没了，历史向量都定位不到，只能全量重建
         boolean reusable = manifest != null
@@ -164,10 +172,12 @@ public class IncrementalIndexer {
         }
 
         // 2. 增/改：按文件哈希比对
-        for (Map.Entry<String, Path> file : files.entrySet()) {
+        for (Map.Entry<String, DocumentSource.StoredDocument> file : files.entrySet()) {
             String docKey = file.getKey();
+            DocumentSource.StoredDocument stored = file.getValue();
             try {
-                String sha256 = sha256(file.getValue());
+                byte[] content = stored.readContent();
+                String sha256 = sha256(content);
                 IngestManifest.DocEntry previous = manifest.getDocuments().get(docKey);
                 if (previous != null && sha256.equals(previous.getSha256())) {
                     // 内容没变：一次 embedding 都不调，这是增量灌库的意义所在
@@ -175,7 +185,7 @@ public class IncrementalIndexer {
                     continue;
                 }
 
-                List<TextSegment> segments = split(file.getValue());
+                List<TextSegment> segments = split(content, stored);
                 if (segments.isEmpty()) {
                     // 文档被掏空了，旧向量不能留着当幽灵
                     if (previous != null) {
@@ -264,51 +274,15 @@ public class IncrementalIndexer {
         return Files.exists(properties.getStoreFile());
     }
 
-    /** 扫描语料根下所有 .adoc，返回 docKey 到文件的映射。目录不存在直接中止，避免误删。 */
-    private Map<String, Path> scanCorpus() {
-        Path root = Path.of(properties.getCorpusRoot());
-        if (!Files.isDirectory(root)) {
-            throw new IllegalStateException("语料根目录不存在，已中止灌库（不会删除任何已有向量）: " + root);
-        }
-
-        SourceLinkResolver resolver = new SourceLinkResolver(properties.getCorpusRoot());
-        Map<String, Path> files = new TreeMap<>();
-        List<Path> unmapped = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(IncrementalIndexer::isAsciiDoc)
-                    .forEach(path -> {
-                        Path absolute = path.toAbsolutePath();
-                        String docKey = resolver.documentKey(
-                                absolute.getParent().toString(), absolute.getFileName().toString());
-                        if (docKey.isEmpty()) {
-                            // 不在语料根下就算不出 chunk_id，这种文件只能放弃
-                            unmapped.add(absolute);
-                            return;
-                        }
-                        Path previous = files.put(docKey, absolute);
-                        if (previous != null) {
-                            log.warn("docKey 冲突，后者覆盖前者: {} <= {}", absolute, previous);
-                        }
-                    });
-        } catch (IOException e) {
-            throw new UncheckedIOException("扫描语料目录失败: " + root, e);
-        }
-
-        for (Path path : unmapped) {
-            log.warn("文件不在语料根下，跳过: {}", path);
-        }
-        log.info("语料扫描完成: 根={} 待比对文档={} 未映射={}", root, files.size(), unmapped.size());
-        return files;
-    }
-
-    private static boolean isAsciiDoc(Path path) {
-        return path.getFileName().toString().toLowerCase().endsWith(".adoc");
-    }
-
-    /** 切分单篇文档。目录里带上本地绝对路径和文件名，切分器靠它算 chunk_id 和 source。 */
-    private List<TextSegment> split(Path file) {
-        Document document = FileSystemDocumentLoader.loadDocument(file, new TextDocumentParser());
+    /**
+     * 切分单篇文档。用文档来源给的虚拟目录和文件名重建 langchain4j Document，
+     * 切分器靠这些元数据算 chunk_id 和 source——和以前从磁盘加载时完全一致。
+     */
+    private List<TextSegment> split(byte[] content, DocumentSource.StoredDocument stored) {
+        Metadata metadata = new Metadata();
+        metadata.put(Document.ABSOLUTE_DIRECTORY_PATH, stored.virtualDirectoryPath());
+        metadata.put(Document.FILE_NAME, stored.fileName());
+        Document document = Document.from(new String(content, StandardCharsets.UTF_8), metadata);
         return splitter.split(document);
     }
 
@@ -388,21 +362,14 @@ public class IncrementalIndexer {
         }
     }
 
-    /** 文件内容的 sha256，十六进制小写。比 mtime 可靠：换机器、git checkout 后 mtime 全变。 */
-    private static String sha256(Path file) throws IOException {
+    /** 字节内容的 sha256，十六进制小写。比 mtime 可靠：换机器、git checkout 后 mtime 全变。 */
+    private static String sha256(byte[] content) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("JVM 不支持 SHA-256", e);
         }
-        try (InputStream in = Files.newInputStream(file)) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
-        }
-        return HexFormat.of().formatHex(digest.digest());
+        return HexFormat.of().formatHex(digest.digest(content));
     }
 }
