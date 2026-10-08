@@ -63,6 +63,43 @@ spring:
           min-idle: 0   # ??????
           max-wait: 100 # ??????
 
+  # QQ 邮箱 SMTP。注意 password 不是 QQ 登录密码，而是 QQ 邮箱「设置 → 账户 →
+  # POP3/SMTP 服务」里开启后生成的「授权码」。本地跑请配环境变量：
+  #   SPRING_MAIL_USERNAME=你的@qq.com
+  #   SPRING_MAIL_PASSWORD=授权码
+  mail:
+    host: smtp.qq.com
+    port: 465
+    protocol: smtps
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: false
+
+  # MySQL 用户表。建一个空库 rag_forge，Hibernate 会按 entity 自动建/改表
+  # （ddl-auto: update）。本地跑请配环境变量：
+  #   MYSQL_USERNAME=root
+  #   MYSQL_PASSWORD=你的密码
+  datasource:
+    url: jdbc:mysql://localhost:3306/rag?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
 # MinIO 对象存储。endpoint 必须是 S3 API 地址：
 # http://192.168.16.128:9001/browser/rag-docs 是控制台（9001），
 # S3 API 默认在 9000；若部署时改过端口，把下面 endpoint 换成实际 API 端口。

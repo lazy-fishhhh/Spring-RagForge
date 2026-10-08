@@ -1,4 +1,4 @@
-import { nextTick, ref, type Ref } from 'vue'
+import { computed, nextTick, ref, type Ref } from 'vue'
 import { streamChat } from '../api/chat'
 import { parseSources } from '../api/sources'
 import type { ChatMessage, SseEvent } from '../types'
@@ -19,15 +19,26 @@ export interface UseChat {
   newChat: () => void
 }
 
+/** 生成会话 id。优先用 crypto.randomUUID，不可用时退回时间戳+随机串。 */
+function newSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 /**
  * 对话状态机：发请求、消费 SSE、按打字机节奏吐字。
  *
+ * <p>memoryId = userId:sessionId：userId 来自登录态，sessionId 每次点「新对话」换一个，
+ * 后端用它做 Redis 聊天记忆的 key。
  * <p>用 runId 而不是布尔标志来判定「这次流还算不算数」：点「新对话」时把 runId 加一，
  * 在途的流下次回调就认不出自己，事件和定时器全部哑掉，不会往已经清空的列表里写东西。
  */
-export function useChat(): UseChat {
+export function useChat(userId: Ref<string>): UseChat {
   const messages = ref<ChatMessage[]>([])
-  const memoryId = ref('')
+  const sessionId = ref(newSessionId())
+  const memoryId = computed(() => `${userId.value}:${sessionId.value}`)
   const streaming = ref(false)
   const scrollSignal = ref(0)
 
@@ -39,8 +50,8 @@ export function useChat(): UseChat {
     runId++
     abortCtrl?.abort()
     abortCtrl = null
+    sessionId.value = newSessionId()
     messages.value = []
-    memoryId.value = ''
     streaming.value = false
   }
 
@@ -121,6 +132,14 @@ export function useChat(): UseChat {
 
     const onEvent = (event: SseEvent): void => {
       if (!alive()) return
+      if (event.event === 'quota') {
+        // 每日额度用完：后端没调模型，直接收尾并显示提示
+        ai.text = ''
+        ai.error = event.data
+        ai.finished = true
+        finish()
+        return
+      }
       if (event.event === 'sources') {
         ai.sources = parseSources(event.data)
       } else if (event.event === 'degraded') {

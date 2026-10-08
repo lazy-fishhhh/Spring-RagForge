@@ -1,4 +1,5 @@
 import type { SseEvent } from '../types'
+import { authHeaders } from './auth'
 
 /**
  * 解析一个 SSE 事件块（已按空行切好）。取 event 名与所有 data 行，
@@ -39,7 +40,7 @@ export async function streamChat(
 ): Promise<void> {
   const url = `/chat?message=${encodeURIComponent(message)}&memoryId=${encodeURIComponent(memoryId)}`
   const res = await fetch(url, {
-    headers: { Accept: 'text/event-stream' },
+    headers: authHeaders({ Accept: 'text/event-stream' }),
     signal,
   })
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)

@@ -2,9 +2,12 @@
 import { nextTick, ref } from 'vue'
 import ChatHeader from './components/ChatHeader.vue'
 import MessageList from './components/MessageList.vue'
+import LoginView from './views/LoginView.vue'
 import { useChat } from './composables/useChat'
+import { useAuth } from './composables/useAuth'
 
-const { messages, memoryId, streaming, scrollSignal, send, stop, newChat } = useChat()
+const { userId } = useAuth()
+const { messages, streaming, scrollSignal, send, stop, newChat } = useChat(userId)
 
 const draft = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
@@ -63,8 +66,9 @@ const suggestions = [
 </script>
 
 <template>
-  <div class="flex h-screen flex-col" style="background: var(--bg)">
-    <ChatHeader v-model:memory-id="memoryId" :streaming="streaming" @new-chat="newChat" />
+  <LoginView v-if="!userId" />
+  <div v-else class="flex h-screen flex-col" style="background: var(--bg)">
+    <ChatHeader :streaming="streaming" @new-chat="newChat" />
 
     <!-- 对话态：消息列表 -->
     <MessageList v-if="messages.length" :messages="messages" :scroll-signal="scrollSignal" />

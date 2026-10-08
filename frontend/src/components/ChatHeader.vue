@@ -2,12 +2,14 @@
 import { ElMessage } from 'element-plus'
 import { ref } from 'vue'
 import { reindex } from '../api/admin'
+import { useAuth } from '../composables/useAuth'
 
-defineProps<{ memoryId: string; streaming: boolean }>()
+defineProps<{ streaming: boolean }>()
 const emit = defineEmits<{
-  'update:memoryId': [value: string]
   'new-chat': []
 }>()
+
+const { logout } = useAuth()
 
 /** 灌库是同步接口，可能跑几分钟，期间按钮保持 loading 免得连点 */
 const reindexing = ref(false)
@@ -58,19 +60,10 @@ async function onReindex(): Promise<void> {
       AI 对话
     </span>
 
-    <div class="flex min-w-0 flex-1 items-center gap-2 pl-2">
-      <label class="text-[13px] whitespace-nowrap" style="color: var(--ink-3)" for="memoryId">memoryId</label>
-      <el-input
-        id="memoryId"
-        class="max-w-[340px]"
-        style="width: 100%"
-        placeholder="会话记忆标识"
-        :model-value="memoryId"
-        @update:model-value="emit('update:memoryId', $event)"
-      />
-    </div>
+    <div class="flex-1"></div>
 
     <el-button plain :disabled="streaming" @click="emit('new-chat')">新对话</el-button>
     <el-button plain :loading="reindexing" @click="onReindex">灌库</el-button>
+    <el-button plain @click="logout">退出登录</el-button>
   </header>
 </template>

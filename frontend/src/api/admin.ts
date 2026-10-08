@@ -1,3 +1,5 @@
+import { authHeaders } from './auth'
+
 /** 一次灌库的结果，字段与后端 IngestStats 记录一一对应。 */
 export interface IngestStats {
   fullRebuild: boolean
@@ -17,7 +19,7 @@ export interface IngestStats {
  * @throws Error 409（已有任务在跑 / 语料根不存在）或其它非 2xx 时抛出，消息里带后端 error 字段
  */
 export async function reindex(): Promise<IngestStats> {
-  const res = await fetch('/admin/reindex', { method: 'POST' })
+  const res = await fetch('/admin/reindex', { method: 'POST', headers: authHeaders() })
   const body: unknown = await res.json().catch(() => null)
   if (!res.ok) {
     const detail =

@@ -4,10 +4,12 @@ import com.springragforge.rag.DegradationRegistry;
 import com.springragforge.rag.SourceInfo;
 import com.springragforge.rag.SourceRegistry;
 import com.springragforge.service.ChatService;
+import com.springragforge.service.QuotaService;
 import jakarta.annotation.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
@@ -32,8 +34,21 @@ public class ChatController {
     @Resource
     private DegradationRegistry degradationRegistry;
 
+    @Resource
+    private QuotaService quotaService;
+
     @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> chat(String message, String memoryId) {
+    public Flux<ServerSentEvent<String>> chat(
+            String message,
+            String memoryId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        // 每日免费额度：每个用户 daily_quota 次/天。超额直接推 quota 事件收尾，不调模型不计费。
+        // tryConsume 在此原子自增计数：无论后续成败都计入，防止靠中止白嫖额度。
+        if (userId == null || !quotaService.tryConsume(userId)) {
+            return Flux.just(
+                    ServerSentEvent.<String>builder().event("quota").data("今日免费额度已用完，明日再来").build(),
+                    ServerSentEvent.<String>builder().data("[DONE]").build());
+        }
         // 累积模型输出的完整正文，流结束后从中提取被引用的来源编号，只返回模型实际用到的来源。
         StringBuilder answerBuffer = new StringBuilder();
 

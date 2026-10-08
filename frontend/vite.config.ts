@@ -19,6 +19,7 @@ export default defineConfig({
       '/chat': { target: backend, changeOrigin: true, proxyTimeout: 0 },
       '/files': { target: backend, changeOrigin: true },
       '/admin': { target: backend, changeOrigin: true },
+      '/auth': { target: backend, changeOrigin: true },
     },
   },
 })
