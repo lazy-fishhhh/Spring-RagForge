@@ -35,3 +35,12 @@ build/
 .claude
 
 data
+
+### Python ###
+__pycache__/
+
+### 前端（frontend/）###
+frontend/node_modules/
+# vite build 的产物，直接输出到 Spring Boot 静态资源目录；打包前要先 npm run build
+src/main/resources/static/index.html
+src/main/resources/static/assets/

@@ -1,0 +1,291 @@
+/* 层顺序必须先声明，且 vendor 排在最前。
+   规则：未分层的 CSS 永远盖过任何分层 CSS。Element Plus 若以未分层形式进来，
+   Tailwind 的 utilities（全在 utilities 层）就一个都压不住它，页面上到处是「明明写了类名却没生效」。
+   所以 Element Plus 用 layer(vendor) 收进来，让 utilities 排在它后面。
+   highlight.js 主题同理进 vendor，其背景色由下方 .code-block 覆盖。 */
+@layer vendor, theme, base, components, utilities;
+
+@import "tailwindcss";
+@import "element-plus/dist/index.css" layer(vendor);
+@import "highlight.js/styles/github-dark.css" layer(vendor);
+
+@plugin "@tailwindcss/typography";
+
+/* ---- 设计 token：纸感中性 + 墨色 + 单一青绿强调 ---- */
+:root {
+  --bg: #f6f5f2;           /* 纸感页面底 */
+  --surface: #ffffff;      /* 输入坞等抬升面 */
+  --ink-strong: #1d1c19;   /* 标题 */
+  --ink: #2f2d29;          /* 正文 */
+  --ink-2: #6b675e;        /* 次级文字 */
+  --ink-3: #a39e94;        /* 占位/提示 */
+  --line: #e6e2da;         /* 暖色发丝线 */
+  --user-bubble: #edeae3;  /* 用户消息暖灰 */
+  --accent: #0e7c66;       /* 青绿强调 */
+  --accent-strong: #0b6250;
+  --accent-soft: #e1eeea;  /* 角标等浅底 */
+}
+
+@layer base {
+  #app {
+    height: 100vh;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 细滚动条：暖灰、轨道透明 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d6d2c8 transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #d6d2c8;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c2bdb1;
+  }
+}
+
+@layer components {
+  /* prose 的字号/行高与色彩变量在文件末尾的未分层块里覆盖：
+     同分层内 typography 插件的 .prose 规则会压过这里，未分层才能稳定生效。 */
+  .prose code::before,
+  .prose code::after {
+    content: none;
+  }
+
+  .prose :not(pre) > code {
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #ece8e0;
+    color: #9a3b52;
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, Menlo, monospace;
+    font-size: 0.86em;
+    font-weight: 500;
+  }
+
+  .prose table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  /* 引用角标：上标徽章，点击新标签打开来源原文 */
+  .cite {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.15em;
+    height: 1.15em;
+    padding: 0 0.3em;
+    margin-left: 2px;
+    border-radius: 9999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 0.7em;
+    font-weight: 600;
+    line-height: 1;
+    vertical-align: super;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .cite:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* 该来源没有链接：置灰、不可点，悬停仍有出处提示 */
+  .cite-plain,
+  .cite-plain:hover {
+    background: #ece8e0;
+    color: #99938a;
+    cursor: default;
+  }
+
+  /* ---- 深色代码块：header 放语言标签和复制按钮 ---- */
+  .code-block {
+    overflow: hidden;
+    margin: 14px 0;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: #171b22;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .code-lang {
+    color: #8b949e;
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .code-copy {
+    padding: 2px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #8b949e;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+  }
+
+  .code-copy:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e6edf3;
+  }
+
+  .code-copy.copied {
+    color: #7ee787;
+  }
+
+  .prose .code-block {
+    margin: 14px 0;
+  }
+
+  .prose .code-block pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .prose .code-block code {
+    padding: 0;
+    background: transparent;
+    color: #e6edf3;
+    font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Consolas, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.65;
+  }
+
+  .code-block .hljs {
+    padding: 0;
+    background: transparent;
+  }
+
+  /* ---- 打字机三点动画 ---- */
+  .typing-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 0;
+  }
+
+  .typing-dots i {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: #aaa59a;
+    animation: typing-bounce 1.2s infinite ease-in-out;
+  }
+
+  .typing-dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing-dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  /* ---- 消息/卡片入场 ---- */
+  .msg-in {
+    animation: msg-in 0.25s ease-out both;
+  }
+
+  .welcome-in {
+    animation: msg-in 0.35s ease-out both;
+  }
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Element Plus 细节微调（未分层，盖过 vendor） ---- */
+.el-button {
+  border-radius: 9px;
+  font-weight: 500;
+}
+
+.el-input__wrapper {
+  border-radius: 9px;
+}
+
+/* AI 正文未分层覆盖：插件 .prose 吃这些 --tw-prose-* 变量，
+   把冷灰蓝默认值换成暖墨色系；字号行高一并锁定 */
+.prose {
+  --tw-prose-body: var(--ink);
+  --tw-prose-headings: var(--ink-strong);
+  --tw-prose-bold: var(--ink-strong);
+  --tw-prose-links: var(--accent);
+  --tw-prose-lead: var(--ink-2);
+  --tw-prose-counters: #bdb8ac;
+  --tw-prose-bullets: #cfcabe;
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--ink);
+  --tw-prose-quote-borders: #d8d3c8;
+  --tw-prose-captions: var(--ink-3);
+  --tw-prose-code: #9a3b52;
+  --tw-prose-th-borders: #d8d3c8;
+  --tw-prose-td-borders: var(--line);
+  font-size: 15px;
+  line-height: 1.82;
+}
