@@ -8,6 +8,9 @@ import com.springragforge.rag.SourceRegistry;
 import com.springragforge.rag.ingest.EsIndexSchema;
 import com.springragforge.rag.ingest.IngestProperties;
 import com.springragforge.rag.injector.NumberedContentInjector;
+import com.springragforge.rag.memory.CharApproxTokenCountEstimator;
+import com.springragforge.rag.memory.MemoryProperties;
+import com.springragforge.rag.memory.SummarizingChatMemory;
 import com.springragforge.rag.ratelimit.RateLimitProperties;
 import com.springragforge.rag.resilience.CachingContentAggregator;
 import com.springragforge.rag.resilience.CachingQueryTransformer;
@@ -30,9 +33,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.mcp.McpToolProvider;
-import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -84,6 +86,7 @@ public class ChatConfig {
     public ChatService chatService(ContentRetriever contentRetriever,
                                    ContentAggregator contentAggregator,
                                    QueryTransformer queryTransformer,
+                                   ChatMemoryProvider chatMemoryProvider,
                                    ResilienceProperties resilienceProperties,
                                    DegradationRegistry degradationRegistry,
                                    RequestScopeCache requestScopeCache,
@@ -101,7 +104,8 @@ public class ChatConfig {
         ChatService assistant = AiServices.builder(ChatService.class)
                 .systemMessage(SystemPrompts.SYSTEM_PROMPT)
                 .streamingChatModel(streamingChatModel)
-                .chatMemoryProvider(chatMemoryProvider())
+                .chatMemoryProvider(chatMemoryProvider)
+                .storeRetrievedContentInChatMemory(false)
                 .retrievalAugmentor(retrievalAugmentor)
                 .build();
         // 代理外面套一层超时/重试/降级；控制器和评测走接口，拿到的是这一层
@@ -199,18 +203,15 @@ public class ChatConfig {
         return new CachingQueryTransformer(coreference, requestScopeCache, resilienceProperties);
     }
 
+    /**
+     * 会话记忆：带滚动摘要的 token 窗口，替代原来的纯滑窗（maxMessages=10）。
+     * 复用非流式 {@link ChatModel} 做摘要——和 query 改写同一个模型，温度 0。
+     */
     @Bean
-    public ChatMemoryProvider chatMemoryProvider() {
-        return new ChatMemoryProvider() {
-            @Override
-            public ChatMemory get(Object memoryId) {
-                return MessageWindowChatMemory.builder()
-                        .maxMessages(10)
-                        .chatMemoryStore(redisChatMemoryStore)
-                        .id(memoryId.toString())
-                        .build();
-            }
-        };
+    public ChatMemoryProvider chatMemoryProvider(ChatModel chatModel, MemoryProperties memoryProperties) {
+        TokenCountEstimator tokenCountEstimator = new CharApproxTokenCountEstimator();
+        return memoryId -> new SummarizingChatMemory(
+                memoryId, redisChatMemoryStore, chatModel, tokenCountEstimator, memoryProperties);
     }
 
     // 连接es

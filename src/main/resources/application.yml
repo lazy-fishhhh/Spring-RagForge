@@ -6,7 +6,7 @@ langchain4j:
     chat-model:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      model-name: qwen3.8-flash
+      model-name: deepseek-v4.1-flash
       temperature: 0
       reasoning-effort: none
       # 非流式这条路没有应用层韧性包裹，靠模型自带超时兜底（改写挂了 QueryRewriter 会退回原问题）
@@ -17,7 +17,7 @@ langchain4j:
     streaming-chat-model:
       api-key: ${DASHSCOPE_API_KEY}
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      model-name: qwen3.8-flash
+      model-name: deepseek-v4.1-flash
       temperature: 0
       reasoning-effort: none  # ????
       log-requests: true    # ??
@@ -125,6 +125,18 @@ rag:
     index-name: rag_knowledge
     # dense_vector 维度，必须等于 embedding 模型输出维度；换模型要同步改并重建索引
     dimension: 1024
+
+  # 会话记忆：滚动摘要替代纯滑窗。预算只算「摘要 + 最近消息」，不含 system 提示和检索片段。
+  # 超预算就逐出最老的消息，攒够 evict-batch 条做一次增量摘要，摘要计入预算。
+  memory:
+    # 记忆预算（摘要 + 最近消息），单位 token
+    budget-tokens: 9000
+    # 无论怎么逐出，最近这么多条原文永远保留
+    keep-recent-messages: 9
+    # 一次逐出的条数：攒批再一次 LLM 调用，避免逐一条就调一次
+    evict-batch: 2
+    # 消息与摘要共用的 Redis TTL，两者一起刷新
+    ttl: 1d
 
   # 混合检索：BM25 + KNN 双路召回，RRF 融合
   retrieval:

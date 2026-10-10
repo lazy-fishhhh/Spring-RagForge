@@ -1,5 +1,6 @@
 package com.springragforge.repository;
 
+import com.springragforge.rag.memory.MemoryProperties;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
@@ -8,18 +9,26 @@ import jakarta.annotation.Resource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.time.Duration;
 import java.util.List;
 
+/**
+ * 会话记忆的 Redis 存储：消息列表 + 滚动摘要两个 key，同一 TTL。
+ */
 @Repository
 public class RedisChatMemoryStore implements ChatMemoryStore {
+
+    /** 摘要 key 后缀，和消息 key 分开存，避免摘要被 MessageWindow 式裁剪波及。 */
+    private static final String SUMMARY_SUFFIX = ":summary";
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private MemoryProperties memoryProperties;
+
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
-        String json = stringRedisTemplate.opsForValue().get(memoryId.toString());
+        String json = stringRedisTemplate.opsForValue().get(key(memoryId));
         if (json == null) {
             return List.of();
         }
@@ -29,11 +38,35 @@ public class RedisChatMemoryStore implements ChatMemoryStore {
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> list) {
         String json = ChatMessageSerializer.messagesToJson(list);
-        stringRedisTemplate.opsForValue().set(memoryId.toString(), json, Duration.ofDays(1));
+        stringRedisTemplate.opsForValue().set(key(memoryId), json, memoryProperties.getTtl());
     }
 
     @Override
     public void deleteMessages(Object memoryId) {
-        stringRedisTemplate.delete(memoryId.toString());
+        stringRedisTemplate.delete(key(memoryId));
+    }
+
+    public String getSummary(Object memoryId) {
+        return stringRedisTemplate.opsForValue().get(summaryKey(memoryId));
+    }
+
+    /** 摘要为空不写：避免残留上一个已清空的摘要。 */
+    public void updateSummary(Object memoryId, String summary) {
+        if (summary == null || summary.isBlank()) {
+            return;
+        }
+        stringRedisTemplate.opsForValue().set(summaryKey(memoryId), summary, memoryProperties.getTtl());
+    }
+
+    public void deleteSummary(Object memoryId) {
+        stringRedisTemplate.delete(summaryKey(memoryId));
+    }
+
+    private static String key(Object memoryId) {
+        return memoryId.toString();
+    }
+
+    private static String summaryKey(Object memoryId) {
+        return memoryId + SUMMARY_SUFFIX;
     }
 }
