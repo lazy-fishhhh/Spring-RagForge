@@ -108,7 +108,7 @@ public class AsciiDocDocumentSplitter implements DocumentSplitter {
         Section root = buildTree(blocks);                               // 2. 块 -> 标题树
         String docTitle = firstTitle(root);                             // 取第一个一级标题当文档名
         List<Draft> drafts = new ArrayList<>();
-        emitSection(root, "", docTitle, drafts);                        // 3. 从树上发段
+        emitSection(root, "", docTitle, drafts);               // 3. 从树上发段
 
         // 4. 元数据统一在这里挂，前面只负责决定每段文本是什么
         String directoryPath = document.metadata().getString(Document.ABSOLUTE_DIRECTORY_PATH);

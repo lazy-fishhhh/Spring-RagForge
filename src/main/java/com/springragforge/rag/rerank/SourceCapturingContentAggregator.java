@@ -34,6 +34,7 @@ public class SourceCapturingContentAggregator implements ContentAggregator {
     @Override
     public List<Content> aggregate(Map<Query, Collection<List<Content>>> queryToContents) {
         List<Content> contents = delegate.aggregate(queryToContents);
+        // 从query中拿memoryId，防止有些query没memoryId，所以全部遍历查找
         Object memoryId = queryToContents.keySet().stream()
                 .map(SourceCapturingContentAggregator::chatMemoryIdOf)
                 .filter(Objects::nonNull)

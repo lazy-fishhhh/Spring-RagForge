@@ -162,7 +162,7 @@ rag:
     api-key: ${DASHSCOPE_API_KEY}
     model-name: qwen3.7-text-rerank
     # 相关性分阈值，低于它的片段丢弃；留空表示不过滤（注意这是 0~1 的 cross-encoder 分）
-    # min-score: 0.3
+    min-score: 0.6
     timeout-seconds: 20
 
   # 生成层韧性：首 token 前可重试（无损），首 token 后只做空闲超时（重试会导致重复内容）
