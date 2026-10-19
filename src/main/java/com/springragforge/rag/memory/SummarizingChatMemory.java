@@ -81,16 +81,20 @@ public class SummarizingChatMemory implements ChatMemory {
      *
      * <p>顺序为：摘要（若存在，包成一条 SystemMessage）+ 最近的原文消息。
      * 摘要放在最前面作为系统提示，模型能先读到"之前发生过什么"。
+     *
+     * <p>提示视图按预算裁剪，但不修改 history。摘要失败期间历史会暂时超预算，
+     * 这里只截断要发给模型的窗口，原文仍保留在 store 里等下一轮重试摘要。
      */
     @Override
     public List<ChatMessage> messages() {
-        List<ChatMessage> out = new ArrayList<>(history.size() + 1);
+        List<ChatMessage> window = promptWindow();
+        List<ChatMessage> out = new ArrayList<>(window.size() + 1);
         // 有摘要时，把它作为一条 SystemMessage 放在最前
         if (summary != null && !summary.isBlank()) {
             out.add(SystemMessage.from(MemoryPrompts.SUMMARY_PREFIX + summary));
         }
         // 再追加尚未被摘要的最近原文
-        out.addAll(history);
+        out.addAll(window);
         return out;
     }
 
@@ -140,53 +144,108 @@ public class SummarizingChatMemory implements ChatMemory {
     /**
      * 超预算就逐出最老的消息，攒够一批做一次增量摘要。
      *
-     * <p>循环里只做移除，攒齐整轮要逐出的全部消息后再一次摘要。若逐出一批调一次模型，
-     * 贴着保留下限时 {@code batchSize} 恒为 1，就退化成"一条一条摘"——每轮好几次模型调用。
+     * <p>顺序是「先摘要、成功才逐出」：摘要失败时 history 原样保留，下一轮继续重试，
+     * 不会因为一次模型调用失败把逐出内容永久丢掉。失败期间提示视图由
+     * {@link #promptWindow()} 临时裁剪，保证发给模型的 prompt 不超预算。
      *
-     * <p>循环条件保证：只有"超预算"且"剩余消息多于保留条数"时才逐出，
-     * 避免把最近上下文也裁掉。逐到回到预算内或只剩保留条数为止。
+     * <p>逐出计划一次性算完再调一次模型，避免贴着保留下限时退化成"一条一条摘"。
+     * 计划只逐到回到预算内或只剩 {@code keepRecentMessages} 条为止。
      */
     private void evictAndSummarize() {
         if (!overBudget()) {
             return;
         }
-        int keep = props.getKeepRecentMessages();
-        List<ChatMessage> evicted = new ArrayList<>();
-        while (overBudget() && history.size() > keep) {
-            // history.size() - keep 恰好是“可逐出而不破坏保留条数”的上限。
-            int batchSize = Math.min(props.getEvictBatch(), history.size() - keep);
-            // 取出最老的一批消息，追加到 evicted 中，等待最后统一摘要。
-            evicted.addAll(history.subList(0, batchSize));
-            // 从 history 中移除这批最老的消息（等价于滑窗向右移动）。
-            history.subList(0, batchSize).clear();
+        // 先只规划、不删除：摘要失败时原文必须还在，下一轮才能重试
+        List<ChatMessage> evicted = planEviction();
+        if (evicted.isEmpty()) {
+            log.warn("记忆超预算但无可逐出消息: memoryId={} history={} keep={}",
+                    id, history.size(), props.getKeepRecentMessages());
+            return;
         }
-        // 把所有被逐出的消息一次性合并进摘要，减少 summarize 调用次数，
-        if (!evicted.isEmpty()) {
-            summary = summarize(summary, evicted);
+        String merged = summarize(summary, evicted);
+        if (merged == null) {
+            // 失败不逐出：保留原文，messages() 会按预算裁剪本轮的提示视图
+            log.warn("滚动摘要失败，保留 {} 条原文等待重试: memoryId={}", evicted.size(), id);
+            return;
         }
+        summary = merged;
+        history.subList(0, evicted.size()).clear();
     }
 
     /**
-     * 判断当前记忆是否超出 token 预算。
+     * 规划本轮要逐出的最老消息，不修改 history。按 {@code evict-batch} 分批推进，
+     * 直到剩余估算回到预算内，或可逐出条数用尽（只剩保留下限）。
+     */
+    private List<ChatMessage> planEviction() {
+        int total = summaryTokens() + counter.estimateTokenCountInMessages(history);
+        int budget = props.getBudgetTokens();   // 上限token
+        int removable = Math.max(0, history.size() - props.getKeepRecentMessages());
+        List<ChatMessage> planned = new ArrayList<>();
+        int removedTokens = 0;
+        int next = 0;
+        while (total - removedTokens > budget && next < removable) {
+            int batchSize = Math.min(props.getEvictBatch(), removable - next);
+            for (int i = 0; i < batchSize; i++) {
+                ChatMessage message = history.get(next++);
+                planned.add(message);
+                removedTokens += counter.estimateTokenCountInMessage(message);
+            }
+        }
+        return planned;
+    }
+
+    /**
+     * 拼 prompt 用的窗口：从最新消息往回装，装到预算为止。
      *
-     * <p>关键点：摘要本身也计入预算——否则摘要会无限增长，最终反而撑爆窗口。
+     * <p>只影响本次提示，不删除 history。正常情况下 history 已在预算内，返回全部；
+     * 摘要失败时历史暂时超预算，这里做非破坏性截断，原文留待下一轮重试摘要。
+     */
+    private List<ChatMessage> promptWindow() {
+        int available = props.getBudgetTokens() - summaryTokens();
+        if (available <= 0) {
+            return List.of();
+        }
+        int start = history.size();
+        int used = 0;
+        while (start > 0) {
+            int cost = counter.estimateTokenCountInMessage(history.get(start - 1));
+            if (used + cost > available) {
+                break;
+            }
+            used += cost;
+            start--;
+        }
+        // 连最新一条都放不下时也保留它，否则模型看不到当前问题
+        if (start == history.size() && !history.isEmpty()) {
+            start = history.size() - 1;
+        }
+        return history.subList(start, history.size());
+    }
+
+    /**
+     * 判断当前记忆是否超出 token 预算。摘要本身也计入，否则摘要会无限增长撑爆窗口。
      */
     private boolean overBudget() {
-        int tokens = counter.estimateTokenCountInMessages(history);
-        if (summary != null && !summary.isBlank()) {
-            tokens += counter.estimateTokenCountInText(summary);
-        }
-        return tokens > props.getBudgetTokens();
+        return summaryTokens() + counter.estimateTokenCountInMessages(history)
+                > props.getBudgetTokens();
+    }
+
+    /** 摘要占用的估算 token，摘要为空时为 0。 */
+    private int summaryTokens() {
+        return summary == null || summary.isBlank()
+                ? 0
+                : counter.estimateTokenCountInText(summary);
     }
 
     /**
      * 增量摘要：{@code summary_new = LLM(summary_prev + 本批逐出)}。绝不重摘全量历史，否则每轮一次 O(n) 调用。
      *
-     * <p>失败时返回旧摘要、不抛出：最老的消息已经逐出，等于退化成纯截断，主流程不受影响。
+     * <p>失败或模型返回空时返回 {@code null}，由调用方决定不逐出；不能在这里返回旧摘要，
+     * 否则调用方无法区分"摘要成功但内容没变"和"调用失败"。
      *
      * @param previous 上一次的摘要，可能为 null（首次摘要）
-     * @param batch    本次被逐出的消息批次
-     * @return 合并后的新摘要；失败或模型返回空则返回旧摘要
+     * @param batch    本次计划逐出的消息批次
+     * @return 合并并裁剪过的新摘要；失败或返回空时为 {@code null}
      */
     private String summarize(String previous, List<ChatMessage> batch) {
         try {
@@ -195,16 +254,63 @@ public class SummarizingChatMemory implements ChatMemory {
                     .replace("{summary}", previous == null || previous.isBlank() ? "(无，这是首次摘要)" : previous)
                     .replace("{batch}", renderBatch(batch));
             String result = summarizer.chat(prompt);
-            // 模型没返回有效内容，保持旧摘要（相当于本批只做了截断）
             if (result == null || result.isBlank()) {
-                return previous;
+                return null;
             }
-            return result.trim();
+            return capSummary(result.trim());
         } catch (Exception e) {
-            // 摘要失败不能影响主流程：最老的消息已逐出，退化为纯截断即可
-            log.warn("滚动摘要失败，退化为截断: memoryId={} cause={}", id, e.toString());
-            return previous;
+            log.warn("滚动摘要调用失败: memoryId={} cause={}", id, e.toString());
+            return null;
         }
+    }
+
+    /**
+     * 摘要输出的硬上限：提示词管不住模型时，这里按与预算一致的估算口径截断。
+     * 优先在句末切断；句末离上限太远时退化为硬截。
+     */
+    private String capSummary(String text) {
+        int max = props.getSummaryMaxTokens();
+        if (counter.estimateTokenCountInText(text) <= max) {
+            return text;
+        }
+        int cjk = 0;
+        int other = 0;
+        int limitEnd = -1;
+        int boundaryEnd = -1;
+        int boundaryTokens = 0;
+        for (int i = 0; i < text.length(); ) {
+            int codePoint = text.codePointAt(i);
+            int end = i + Character.charCount(codePoint);
+            if (CharApproxTokenCountEstimator.isCjk(codePoint)) {
+                cjk++;
+            } else {
+                other++;
+            }
+            int tokens = cjk + (other + 3) / 4;
+            if (tokens > max) {
+                break;
+            }
+            limitEnd = end; // 最多能装多少
+            if (isSentenceEnd(codePoint)) {
+                boundaryEnd = end;  // 结尾是标点时最多装多少
+                boundaryTokens = tokens;
+            }
+            i = end;
+        }
+        int cut = boundaryEnd > 0 && boundaryTokens >= max / 2 ? boundaryEnd : limitEnd;
+        if (cut <= 0) {
+            return text;
+        }
+        String capped = text.substring(0, cut).trim();
+        log.warn("摘要超出 {} token，已截断: memoryId={} before={} after={}",
+                max, id, counter.estimateTokenCountInText(text), counter.estimateTokenCountInText(capped));
+        return capped;
+    }
+
+    /** 句末标点，用于尽量在语义边界截断摘要。 */
+    private static boolean isSentenceEnd(int codePoint) {
+        return codePoint == '。' || codePoint == '！' || codePoint == '？' || codePoint == '；'
+                || codePoint == '!' || codePoint == '?' || codePoint == ';' || codePoint == '\n';
     }
 
     /**

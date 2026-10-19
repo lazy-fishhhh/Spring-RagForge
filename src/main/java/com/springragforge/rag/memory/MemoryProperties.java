@@ -29,6 +29,9 @@ public class MemoryProperties {
     /** 一次逐出的条数：攒够这批再做一次 LLM 摘要，避免逐一条就调一次模型。 */
     private int evictBatch = 2;
 
+    /** 摘要自身的 token 上限：输出超过就在代码里截断，避免模型无视提示词无限增长。 */
+    private int summaryMaxTokens = 400;
+
     /** 消息与摘要共用的 Redis TTL，两者一起刷新，别让一个先过期导致对不上。 */
     private Duration ttl = Duration.ofDays(1);
 
@@ -42,6 +45,10 @@ public class MemoryProperties {
         }
         if (evictBatch <= 0) {
             throw new IllegalStateException("rag.memory.evict-batch 必须为正数，当前 " + evictBatch);
+        }
+        if (summaryMaxTokens <= 0 || summaryMaxTokens >= budgetTokens) {
+            throw new IllegalStateException("rag.memory.summary-max-tokens 必须在 (0, budget-tokens) 内，当前 "
+                    + summaryMaxTokens + "，预算 " + budgetTokens);
         }
     }
 }

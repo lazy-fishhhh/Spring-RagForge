@@ -140,7 +140,7 @@ public class CharApproxTokenCountEstimator implements TokenCountEstimator {
      * @param codePoint Unicode code point
      * @return 属于 CJK 相关范围返回 true
      */
-    private static boolean isCjk(int codePoint) {
+    static boolean isCjk(int codePoint) {
         return (codePoint >= 0x4E00 && codePoint <= 0x9FFF)   // CJK 统一表意
                 || (codePoint >= 0x3400 && codePoint <= 0x4DBF) // 扩展 A
                 || (codePoint >= 0x3000 && codePoint <= 0x303F) // CJK 标点
