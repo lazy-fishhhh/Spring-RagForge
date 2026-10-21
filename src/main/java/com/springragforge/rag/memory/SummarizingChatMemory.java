@@ -18,8 +18,8 @@ import java.util.List;
 /**
  * 带滚动摘要的会话记忆，替代纯滑窗。
  *
- * <p>结构：{@code messages()} 返回「摘要 SystemMessage + 最近若干条原文」。超预算时从头部逐出最老的
- * 消息，攒够一批做一次增量摘要合进摘要段。摘要计入预算，否则摘要本身会无限增长。
+ * <p>结构：{@code messages()} 返回「摘要 SystemMessage + 最近若干条原文」。占用涨到预算高水位时
+ * 从头部一次性逐出到低水位，攒够一批做一次增量摘要合进摘要段。摘要计入预算，否则摘要本身会无限增长。
  *
  * <p>为什么自己实现而不包 {@link dev.langchain4j.store.memory.chat.ChatMemoryStore}：AiServices 拼 prompt
  * 走的是 {@code ChatMemory.messages()}，不走 store；而 {@code MessageWindowChatMemory.add} 是先裁窗口再存，
@@ -148,7 +148,11 @@ public class SummarizingChatMemory implements ChatMemory {
     }
 
     /**
-     * 超预算就逐出最老的消息，攒够一批做一次增量摘要。
+     * 达到高水位就逐出最老的消息，攒够一批做一次增量摘要。
+     *
+     * <p>触发用高水位（{@code summarizeAtRatio}）、逐出到低水位（{@code evictToRatio}），
+     * 而不是「一超预算就摘」：后者窗口刚回到预算内，下一轮新增两条消息又超，
+     * 等于每轮多一次同步模型往返。高低水位让一次摘要能管好几轮。
      *
      * <p>顺序是「先摘要、成功才逐出」：单次失败时 history 原样保留，下一轮重试，
      * 避免一次模型抖动丢掉内容。但连续失败达到 {@code summaryFailureThreshold} 后
@@ -157,14 +161,14 @@ public class SummarizingChatMemory implements ChatMemory {
      * 防止 {@code keepRecentMessages} 本身超预算时永远无法逐出。
      *
      * <p>逐出计划一次性算完再调一次模型，避免贴着保留下限时退化成"一条一条摘"。
-     * 计划只逐到回到预算内或只剩 {@code keepRecentMessages} 条为止。
+     * 计划只逐到低水位或只剩 {@code keepRecentMessages} 条为止。
      */
     private void evictAndSummarize() {
-        if (overBudget()) {
+        if (shouldSummarize()) {
             List<ChatMessage> evicted = planEviction();
             if (evicted.isEmpty()) {
-                log.warn("记忆超预算但无可逐出消息: memoryId={} history={} keep={}",
-                        id, history.size(), props.getKeepRecentMessages());
+                log.warn("记忆超过摘要水位但无可逐出消息: memoryId={} history={} keep={} trigger={}",
+                        id, history.size(), props.getKeepRecentMessages(), triggerTokens());
             } else {
                 summarizeOrDegrade(evicted);
             }
@@ -208,7 +212,7 @@ public class SummarizingChatMemory implements ChatMemory {
         }
         int removedTokens = 0;
         int dropped = 0;
-        int total = summaryTokens() + counter.estimateTokenCountInMessages(history);
+        int total = estimateTokens();
         while (total - removedTokens > cap && history.size() - dropped > 1) {
             removedTokens += counter.estimateTokenCountInMessage(history.get(dropped));
             dropped++;
@@ -222,16 +226,16 @@ public class SummarizingChatMemory implements ChatMemory {
 
     /**
      * 规划本轮要逐出的最老消息，不修改 history。按 {@code evict-batch} 分批推进，
-     * 直到剩余估算回到预算内，或可逐出条数用尽（只剩保留下限）。
+     * 直到剩余估算降到低水位，或可逐出条数用尽（只剩保留下限）。
      */
     private List<ChatMessage> planEviction() {
-        int total = summaryTokens() + counter.estimateTokenCountInMessages(history);
-        int budget = props.getBudgetTokens();   // 上限token
+        int total = estimateTokens();
+        int target = evictTargetTokens();   // 低水位：一次逐到这里，给后面几轮留余量
         int removable = Math.max(0, history.size() - props.getKeepRecentMessages());
         List<ChatMessage> planned = new ArrayList<>();
         int removedTokens = 0;
         int next = 0;
-        while (total - removedTokens > budget && next < removable) {
+        while (total - removedTokens > target && next < removable) {
             int batchSize = Math.min(props.getEvictBatch(), removable - next);
             for (int i = 0; i < batchSize; i++) {
                 ChatMessage message = history.get(next++);
@@ -249,6 +253,8 @@ public class SummarizingChatMemory implements ChatMemory {
      * 摘要失败时历史暂时超预算，这里做非破坏性截断，原文留待下一轮重试摘要。
      */
     private List<ChatMessage> promptWindow() {
+        // 这里用预算硬上限而不是触发水位：高水位只是「该摘了」的信号，
+        // 窗口本身不能超过预算，否则真发出去的 prompt 会超出记忆预算。
         int available = props.getBudgetTokens() - summaryTokens();
         if (available <= 0) {
             return List.of();
@@ -271,11 +277,33 @@ public class SummarizingChatMemory implements ChatMemory {
     }
 
     /**
-     * 判断当前记忆是否超出 token 预算。摘要本身也计入，否则摘要会无限增长撑爆窗口。
+     * 是否达到触发摘要的高水位。摘要本身也计入，否则摘要会无限增长撑爆窗口。
+     *
+     * <p>用高水位而不是预算线：贴着预算触发的话，逐出后下一轮新增两条消息立刻又超，
+     * 摘要调用就退化成每轮一次。
      */
-    private boolean overBudget() {
-        return summaryTokens() + counter.estimateTokenCountInMessages(history)
-                > props.getBudgetTokens();
+    private boolean shouldSummarize() {
+        return estimateTokens() > triggerTokens();
+    }
+
+    /** 触发摘要的 token 水位：{@code budgetTokens × summarizeAtRatio}。 */
+    private int triggerTokens() {
+        return tokensAt(props.getSummarizeAtRatio());
+    }
+
+    /** 逐出目标 token 水位：{@code budgetTokens × evictToRatio}。 */
+    private int evictTargetTokens() {
+        return tokensAt(props.getEvictToRatio());
+    }
+
+    /** 把预算比例换算成绝对 token 数，向下取整，避免边界上多算一个。 */
+    private int tokensAt(double ratio) {
+        return (int) Math.floor(props.getBudgetTokens() * ratio);
+    }
+
+    /** 当前记忆的总估算占用：滚动摘要 + 尚未被摘要的原文。 */
+    private int estimateTokens() {
+        return summaryTokens() + counter.estimateTokenCountInMessages(history);
     }
 
     /** 摘要占用的估算 token，摘要为空时为 0。 */
