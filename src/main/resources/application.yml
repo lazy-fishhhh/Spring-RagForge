@@ -132,13 +132,17 @@ rag:
   # 超预算就逐出最老的消息，攒够 evict-batch 条做一次增量摘要，摘要计入预算。
   memory:
     # 记忆预算（摘要 + 最近消息），单位 token
-    budget-tokens: 9000
+    budget-tokens: 7000
     # 无论怎么逐出，最近这么多条原文永远保留
-    keep-recent-messages: 9
+    keep-recent-messages: 7
     # 一次逐出的条数：攒批再一次 LLM 调用，避免逐一条就调一次
     evict-batch: 2
     # 摘要自身 token 上限（代码侧二次兜底），必须小于 budget-tokens
     summary-max-tokens: 400
+    # 连续摘要失败达到该次数后放弃摘要、直接逐出，防止 history 无限增长
+    summary-failure-threshold: 2
+    # 存储硬上限（摘要 + 历史），0 表示不启用；超限时无视摘要直接丢弃最老消息
+    hard-cap-tokens: 18000
     # 消息与摘要共用的 Redis TTL，两者一起刷新
     ttl: 1d
 

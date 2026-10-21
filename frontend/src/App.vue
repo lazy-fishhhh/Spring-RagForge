@@ -144,6 +144,7 @@ const suggestions = [
             ref="textarea"
             v-model="draft"
             rows="1"
+            maxlength="3000"
             placeholder="给 AI 发送消息…"
             class="block max-h-[180px] w-full resize-none overflow-y-auto bg-transparent px-4 pb-9 pt-3.5 text-[15px] leading-6 outline-none"
             style="color: var(--ink)"

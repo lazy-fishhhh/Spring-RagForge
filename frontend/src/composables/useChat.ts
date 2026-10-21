@@ -132,8 +132,8 @@ export function useChat(userId: Ref<string>): UseChat {
 
     const onEvent = (event: SseEvent): void => {
       if (!alive()) return
-      if (event.event === 'quota') {
-        // 每日额度用完：后端没调模型，直接收尾并显示提示
+      if (event.event === 'quota' || event.event === 'error') {
+        // 额度用完或输入校验失败：后端没调模型，直接收尾并显示提示
         ai.text = ''
         ai.error = event.data
         ai.finished = true

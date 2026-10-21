@@ -46,6 +46,8 @@ public class SummarizingChatMemory implements ChatMemory {
     private final List<ChatMessage> history;
     /** 滚动摘要，null 表示还没有摘要。 */
     private String summary;
+    /** 连续摘要失败次数；成功或降级逐出后归零。 */
+    private int summaryFailures;
 
     /**
      * 构造时从 Redis 恢复历史消息和已有摘要，实现"重启后记忆不丢"。
@@ -66,9 +68,11 @@ public class SummarizingChatMemory implements ChatMemory {
         this.summarizer = summarizer;
         this.counter = counter;
         this.props = props;
-        // 从 Redis 拉取该会话已有的历史与摘要，保证多实例/重启后上下文一致
+        // 从 Redis 拉取该会话已有的历史、摘要与失败计数，保证多实例/重启后状态一致。
+        // 失败计数必须持久化：provider 每个请求都 new 一个实例，只放内存永远到不了阈值。
         this.history = new ArrayList<>(store.getMessages(id));
         this.summary = store.getSummary(id);
+        this.summaryFailures = store.getSummaryFailures(id);
     }
 
     @Override
@@ -83,7 +87,7 @@ public class SummarizingChatMemory implements ChatMemory {
      * 摘要放在最前面作为系统提示，模型能先读到"之前发生过什么"。
      *
      * <p>提示视图按预算裁剪，但不修改 history。摘要失败期间历史会暂时超预算，
-     * 这里只截断要发给模型的窗口，原文仍保留在 store 里等下一轮重试摘要。
+     * 这里只截断要发给模型的窗口；原文保留到连续失败达到阈值后降级丢弃，或硬上限兜底。
      */
     @Override
     public List<ChatMessage> messages() {
@@ -137,39 +141,83 @@ public class SummarizingChatMemory implements ChatMemory {
     public void clear() {
         history.clear();
         summary = null;
+        summaryFailures = 0;
         store.deleteMessages(id);
         store.deleteSummary(id);
+        store.deleteSummaryFailures(id);
     }
 
     /**
      * 超预算就逐出最老的消息，攒够一批做一次增量摘要。
      *
-     * <p>顺序是「先摘要、成功才逐出」：摘要失败时 history 原样保留，下一轮继续重试，
-     * 不会因为一次模型调用失败把逐出内容永久丢掉。失败期间提示视图由
-     * {@link #promptWindow()} 临时裁剪，保证发给模型的 prompt 不超预算。
+     * <p>顺序是「先摘要、成功才逐出」：单次失败时 history 原样保留，下一轮重试，
+     * 避免一次模型抖动丢掉内容。但连续失败达到 {@code summaryFailureThreshold} 后
+     * 降级为直接逐出：老消息本来就被 {@link #promptWindow()} 截掉不进 prompt，
+     * 继续保留只会撑大 Redis。最后再用 {@code hardCapTokens} 兜底，
+     * 防止 {@code keepRecentMessages} 本身超预算时永远无法逐出。
      *
      * <p>逐出计划一次性算完再调一次模型，避免贴着保留下限时退化成"一条一条摘"。
      * 计划只逐到回到预算内或只剩 {@code keepRecentMessages} 条为止。
      */
     private void evictAndSummarize() {
-        if (!overBudget()) {
-            return;
+        if (overBudget()) {
+            List<ChatMessage> evicted = planEviction();
+            if (evicted.isEmpty()) {
+                log.warn("记忆超预算但无可逐出消息: memoryId={} history={} keep={}",
+                        id, history.size(), props.getKeepRecentMessages());
+            } else {
+                summarizeOrDegrade(evicted);
+            }
         }
-        // 先只规划、不删除：摘要失败时原文必须还在，下一轮才能重试
-        List<ChatMessage> evicted = planEviction();
-        if (evicted.isEmpty()) {
-            log.warn("记忆超预算但无可逐出消息: memoryId={} history={} keep={}",
-                    id, history.size(), props.getKeepRecentMessages());
-            return;
-        }
+        enforceHardCap();
+    }
+
+    /**
+     * 尝试摘要并逐出；失败累计到阈值时放弃摘要、直接丢弃，保证 history 有界。
+     */
+    private void summarizeOrDegrade(List<ChatMessage> evicted) {
         String merged = summarize(summary, evicted);
-        if (merged == null) {
-            // 失败不逐出：保留原文，messages() 会按预算裁剪本轮的提示视图
-            log.warn("滚动摘要失败，保留 {} 条原文等待重试: memoryId={}", evicted.size(), id);
+        if (merged != null) {
+            summary = merged;
+            history.subList(0, evicted.size()).clear();
+            summaryFailures = 0;
             return;
         }
-        summary = merged;
+        summaryFailures++;
+        if (summaryFailures < props.getSummaryFailureThreshold()) {
+            // 未到阈值：保留原文，messages() 会按预算裁剪本轮的提示视图，下一轮再试
+            log.warn("滚动摘要失败，保留 {} 条原文等待重试 ({}/{}): memoryId={}",
+                    evicted.size(), summaryFailures, props.getSummaryFailureThreshold(), id);
+            return;
+        }
+        // 持续失败：降级丢弃，否则 history 无限增长。被丢的消息本就不在 prompt 窗口内
         history.subList(0, evicted.size()).clear();
+        summaryFailures = 0;
+        log.warn("滚动摘要连续失败 {} 次，降级丢弃 {} 条原文: memoryId={}",
+                props.getSummaryFailureThreshold(), evicted.size(), id);
+    }
+
+    /**
+     * 硬上限兜底：摘要持续失败且 {@code keepRecentMessages} 本身超预算时，
+     * {@link #planEviction()} 永远为空。这里无视保留下限丢弃最老消息，但至少保留最新一条。
+     */
+    private void enforceHardCap() {
+        int cap = props.getHardCapTokens();
+        if (cap <= 0) {
+            return;
+        }
+        int removedTokens = 0;
+        int dropped = 0;
+        int total = summaryTokens() + counter.estimateTokenCountInMessages(history);
+        while (total - removedTokens > cap && history.size() - dropped > 1) {
+            removedTokens += counter.estimateTokenCountInMessage(history.get(dropped));
+            dropped++;
+        }
+        if (dropped > 0) {
+            history.subList(0, dropped).clear();
+            log.warn("记忆超过硬上限 {} token，丢弃 {} 条最老原文: memoryId={}",
+                    cap, dropped, id);
+        }
     }
 
     /**
@@ -346,9 +394,10 @@ public class SummarizingChatMemory implements ChatMemory {
         return "其他";
     }
 
-    /** 消息和摘要一起落 Redis，同一 TTL，避免一个先过期导致对不上。 */
+    /** 消息、摘要和失败计数一起落 Redis，同一 TTL，避免一个先过期导致对不上。 */
     private void persist() {
         store.updateMessages(id, history);
         store.updateSummary(id, summary);
+        store.updateSummaryFailures(id, summaryFailures);
     }
 }

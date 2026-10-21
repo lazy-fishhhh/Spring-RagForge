@@ -25,6 +25,9 @@ public class ChatController {
     /** 匹配回答正文中的引用标记，如 [ref:1]、[ref:3]。用 [ref:] 前缀避免和代码里的数组下标 [0][1] 冲突。 */
     private static final Pattern CITATION_PATTERN = Pattern.compile("\\[ref:(\\d+)\\]");
 
+    /** 单条提问的字符上限：超大消息会打爆记忆预算和存储硬上限，在入口拦住。 */
+    private static final int MAX_MESSAGE_CHARS = 3000;
+
     @Resource
     private ChatService chatService;
 
@@ -42,6 +45,13 @@ public class ChatController {
             String message,
             String memoryId,
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        // 长度检查放在扣额度之前：超限请求不消耗每日次数，也不写记忆
+        if (message != null && message.codePointCount(0, message.length()) > MAX_MESSAGE_CHARS) {
+            return Flux.just(
+                    ServerSentEvent.<String>builder().event("error")
+                            .data("问题过长，最多 " + MAX_MESSAGE_CHARS + " 字符").build(),
+                    ServerSentEvent.<String>builder().data("[DONE]").build());
+        }
         // 每日免费额度：每个用户 daily_quota 次/天。超额直接推 quota 事件收尾，不调模型不计费。
         // tryConsume 在此原子自增计数：无论后续成败都计入，防止靠中止白嫖额度。
         if (userId == null || !quotaService.tryConsume(userId)) {

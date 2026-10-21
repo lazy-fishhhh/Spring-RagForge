@@ -32,6 +32,12 @@ public class MemoryProperties {
     /** 摘要自身的 token 上限：输出超过就在代码里截断，避免模型无视提示词无限增长。 */
     private int summaryMaxTokens = 400;
 
+    /** 连续摘要失败达到该次数后降级：不写摘要、直接逐出，防止 history 无限增长。 */
+    private int summaryFailureThreshold = 2;
+
+    /** 存储硬上限（摘要 + 历史），0 表示不启用。超限时无视摘要直接丢弃最老消息。 */
+    private int hardCapTokens = 0;
+
     /** 消息与摘要共用的 Redis TTL，两者一起刷新，别让一个先过期导致对不上。 */
     private Duration ttl = Duration.ofDays(1);
 
@@ -49,6 +55,14 @@ public class MemoryProperties {
         if (summaryMaxTokens <= 0 || summaryMaxTokens >= budgetTokens) {
             throw new IllegalStateException("rag.memory.summary-max-tokens 必须在 (0, budget-tokens) 内，当前 "
                     + summaryMaxTokens + "，预算 " + budgetTokens);
+        }
+        if (summaryFailureThreshold <= 0) {
+            throw new IllegalStateException("rag.memory.summary-failure-threshold 必须为正数，当前 "
+                    + summaryFailureThreshold);
+        }
+        if (hardCapTokens != 0 && hardCapTokens < budgetTokens) {
+            throw new IllegalStateException("rag.memory.hard-cap-tokens 为 0 或必须不小于 budget-tokens，当前 "
+                    + hardCapTokens + "，预算 " + budgetTokens);
         }
     }
 }
